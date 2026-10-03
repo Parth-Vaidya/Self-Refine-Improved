@@ -67,9 +67,11 @@ Here are some examples of this scoring rubric:
         )
         
         generated_feedback = openai_api.OpenaiAPIWrapper.get_first_response(output)
-        generated_feedback = generated_feedback.split("Scores:")[1].strip()
+        if "Scores:" in generated_feedback:
+            generated_feedback = generated_feedback.split("Scores:")[1]
         generated_feedback = generated_feedback.split("#")[0].strip()
         return generated_feedback
+
 
     def get_prompt_with_question(self, title: str, acronym: str):
         question = self.make_query(title=title, acronym=acronym)

@@ -1,19 +1,14 @@
+import os
 import re
 import pandas as pd
-
 
 from src.acronym.task_init import AcronymGenTaskInit
 from src.acronym.task_iterate import AcronymGenTaskIterate
 from src.acronym.feedback import AcronymGenFeedback
 from src.utils import retry_parse_fail_prone_cmd
 
-CODEX = "code-davinci-002"
-GPT3 = "text-davinci-003"
-CHAT_GPT = "gpt-3.5-turbo"
-GPT4 = "gpt-4"
+ENGINE = os.getenv("LLM_ENGINE", "gemini-1.5-flash")
 
-
-ENGINE = CHAT_GPT
 
 @retry_parse_fail_prone_cmd
 def iterative_acronym(title: str, max_attempts: int) -> str:
@@ -49,9 +44,16 @@ def iterative_acronym(title: str, max_attempts: int) -> str:
 
         
         scores = task_feedback(title=title, acronym=acronym)
-        # extract expression "Total score: 22/25" from scores
-        total_score = re.search(r"Total score: (\d+)/(\d+)", scores).group(0)
-        total_score = int(total_score.split(":")[1].strip().split("/")[0])
+        score_match = re.search(r"Total\s*score:?\s*\*?\*?\s*(\d+)/(\d+)", scores, re.IGNORECASE)
+        if score_match:
+            total_score = int(score_match.group(1))
+        else:
+            found_scores = re.findall(r"(\d+)/5", scores)
+            if found_scores:
+                total_score = sum(int(s) for s in found_scores)
+            else:
+                total_score = 15
+
         
         all_acronyms_to_scores[acronym] = {
             "scores": scores,

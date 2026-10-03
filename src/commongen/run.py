@@ -1,3 +1,4 @@
+import os
 import pathlib
 from tqdm import tqdm
 from typing import List
@@ -7,10 +8,8 @@ from src.commongen.task_iterate import CommongenTaskIterate
 from src.commongen.feedback import CommongenFeedback
 from src.utils import retry_parse_fail_prone_cmd
 
-CODEX = "code-davinci-002"
-GPT3 = "text-davinci-003"
-CHATGPT = "gpt-3.5-turbo"
-ENGINE = GPT3
+ENGINE = os.getenv("LLM_ENGINE", "gemini-1.5-flash")
+
 
 
 @retry_parse_fail_prone_cmd

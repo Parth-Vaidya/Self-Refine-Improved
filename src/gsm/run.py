@@ -1,15 +1,13 @@
+import os
 import pandas as pd
 from tqdm import tqdm
 
-
 from src.gsm.task_init import GSMInit
 from src.gsm.feedback import GSMFeedback
-
 from src.utils import retry_parse_fail_prone_cmd
 
-CODEX = "code-davinci-002"
-# GPT3 = "text-davinci-003"
-ENGINE = CODEX
+ENGINE = os.getenv("LLM_ENGINE", "gemini-1.5-flash")
+
 
 
 @retry_parse_fail_prone_cmd

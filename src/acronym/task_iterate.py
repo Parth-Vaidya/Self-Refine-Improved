@@ -112,13 +112,18 @@ Okay, let's use this feedback to improve the acronym.
         response = openai_api.OpenaiAPIWrapper.get_first_response(output)
 
         
-        acronym = response.split("Acronym:")[1].strip().split("\n")[0].strip()
-        
-        new_title = response.split("Title:")[1].strip().split("\n")[0].strip()
-        
-        
-        
+        if "Acronym:" in response:
+            acronym = response.split("Acronym:")[1].strip().split("\n")[0].strip()
+        else:
+            acronym = response.strip().split("\n")[0].strip()
+
+        if "Title:" in response:
+            new_title = response.split("Title:")[1].strip().split("\n")[0].strip()
+        else:
+            new_title = list(acronyms_to_scores.values())[-1][0] if acronyms_to_scores else ""
+
         return new_title, acronym.strip()
+
 
     def make_input(
         self,

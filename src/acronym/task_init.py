@@ -43,11 +43,11 @@ Acronym: {answer}"""
         )
 
         generated_acronym = openai_api.OpenaiAPIWrapper.get_first_response(output)
-        # print("output:")
-        # print(generated_acronym)
-        # sys.exit()
-        generated_acronym = generated_acronym.split(self.answer_prefix)[1].replace("#", "").strip()
-        return generated_acronym.strip()
+        if self.answer_prefix in generated_acronym:
+            generated_acronym = generated_acronym.split(self.answer_prefix)[1]
+        generated_acronym = generated_acronym.replace("#", "").strip().split("\n")[0].strip()
+        return generated_acronym
+
 
 
 def test():

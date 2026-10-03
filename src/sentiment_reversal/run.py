@@ -1,3 +1,4 @@
+import os
 import math
 import pathlib
 from tqdm import tqdm
@@ -12,14 +13,8 @@ from src.sentiment_reversal.measure import SentimentTransferMeasurement
 from src.sentiment_reversal.feedback import SentimentTransferFeedback
 from src.utils import retry_parse_fail_prone_cmd
 
-CODEX = "code-davinci-002"
-GPT3 = "text-davinci-003"
-GPT3_v2 = "text-davinci-001"
-SHADOWFIRE = "shadowfire"
-GPT4 = "gpt-4"
-CHATGPT = "gpt-3.5-turbo"
-SELF = "self-vulcan-13b"
-ENGINE = GPT4
+ENGINE = os.getenv("LLM_ENGINE", "gemini-1.5-flash")
+
 
 @retry_parse_fail_prone_cmd
 def iterative_prompting(
