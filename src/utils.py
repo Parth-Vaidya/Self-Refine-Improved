@@ -1,4 +1,10 @@
 import traceback
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 
 class Prompt:
     def __init__(

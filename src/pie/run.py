@@ -1,18 +1,14 @@
+import os
 import pandas as pd
 from tqdm import tqdm
-
 
 from src.pie.task_init import PieInit
 from src.pie.task_iterate import PieIterate
 from src.pie.feedback import PieFeedback
-
 from src.utils import retry_parse_fail_prone_cmd
 
-CODEX = "code-davinci-002"
-GPT3 = "text-davinci-003"
-CHATGPT = "gpt-3.5-turbo"
-GPT4 = "gpt-4"
-ENGINE = CHATGPT
+ENGINE = os.getenv("LLM_ENGINE", "gemini-1.5-flash")
+
 
 
 @retry_parse_fail_prone_cmd
