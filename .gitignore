@@ -108,12 +108,28 @@ celerybeat.pid
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
 ENV/
 env.bak/
 venv.bak/
+
+# VS Code workspace settings
+.vscode/
+*.code-workspace
+
+# Editor and operating-system temporary files
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Ruff cache
+.ruff_cache/
 
 # Spyder project settings
 .spyderproject
@@ -137,7 +153,5 @@ out-responsegen.json
 # Reproducible dependency manifests and local research environment
 !requirements.txt
 !requirements-research-lock.txt
-.env.*
-!.env.example
 .venv-research/
 experiment-results/
