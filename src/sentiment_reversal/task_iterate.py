@@ -1,3 +1,4 @@
+from prompt_lib.experiment import select_model
 from typing import List, Tuple
 import pandas as pd
 
@@ -118,8 +119,9 @@ okay, let's try again. NLP Research Project. Please rewrite this review to have 
             "stop_token": self.inter_example_sep,
             "temperature": 0.0,
             "return_entire_response": True,
+            "stage": "refinement",
         }
-        if self.engine not in ["gpt-3.5-turbo", "gpt-4"]:
+        if not select_model("refinement", self.engine).startswith(("hf:", "groq:")) and self.engine not in ["gpt-3.5-turbo", "gpt-4"]:
             args["logprobs"] = 1
             
         transferred_input = router.call(

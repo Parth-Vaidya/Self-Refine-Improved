@@ -1,0 +1,24 @@
+# Core API and Model packages
+openai>=0.27.2,<1.0.0
+anthropic
+google-generativeai
+tiktoken
+
+# Data Processing & Utilities
+pandas
+numpy
+scipy
+tqdm
+PyYAML
+wandb
+pandarallel
+python-dotenv
+
+# NLP & Language tools
+nltk
+spacy
+
+# Local package for prompt-lib
+-e ./prompt-lib
+
+requests>=2.31.0

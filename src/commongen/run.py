@@ -31,21 +31,20 @@ def autofb_commongen(concepts: List[str], max_attempts: int) -> str:
     )
 
     # Initialize the task
-
     n_attempts = 0
-
-    print(f"{n_attempts} INIT> {concepts}")
     sent_to_fb = []
 
-    while n_attempts < max_attempts:
-        print()
+    print(f"\n========================================================")
+    print(f" STARTING COMMONGEN SELF-REFINE")
+    print(f" Input Concepts : {concepts}")
+    print(f" Max Iterations : {max_attempts}")
+    print(f"========================================================")
 
+    while n_attempts < max_attempts:
         if n_attempts == 0:
             sent = task_init(concepts=concepts)
         else:
             sent = task_iterate(concepts=concepts, sent_to_fb=sent_to_fb)
-
-        print(f"{n_attempts} GEN> {sent}")
 
         concept_fb, commonsense_fb = task_feedback(concepts=concepts, sentence=sent)
 
@@ -56,9 +55,17 @@ def autofb_commongen(concepts: List[str], max_attempts: int) -> str:
                 "commonsense_feedback": commonsense_fb,
             }
         )
-        print(f"{n_attempts} Concept> {concept_fb} | CommonSense> {commonsense_fb}")
+
+        step_label = "INITIAL DRAFT (Attempt 0)" if n_attempts == 0 else f"REFINEMENT STEP {n_attempts}"
+        print(f"\n--------------------------------------------------------")
+        print(f" >>> [{step_label}]")
+        print(f"--------------------------------------------------------")
+        print(f"Generated Sentence  : \"{sent}\"")
+        print(f"Missing Concepts    : {concept_fb}")
+        print(f"Commonsense Critique: {commonsense_fb}")
 
         if concept_fb.lower() == "none" and commonsense_fb.lower() == "none":
+            print(f"\n[Success] All constraints satisfied! Stopping early.")
             break
 
         n_attempts += 1
@@ -74,12 +81,34 @@ def run_cmd():
         max_attempts=max_attempts,
     )
 
-    res = []
-    for s in sent_to_fb:
-        sent = s["sentence"]
-        fb = ";  ".join(s["concept_feedback"]) + " " + s["commonsense_feedback"]
-        res.append(f"{sent} ({fb})")
-    print(" -> ".join(res))
+    if not sent_to_fb:
+        print("\nNo output generated.")
+        return
+
+    # Print summary progression
+    print("\n" + "=" * 65)
+    print("                     REFINEMENT SUMMARY")
+    print("=" * 65)
+    print(f"{'Step':<8} {'Status':<25} {'Sentence Preview'}")
+    print("-" * 65)
+    for idx, item in enumerate(sent_to_fb):
+        is_clean = (item['concept_feedback'] == ['none'] or item['concept_feedback'] == ['NONE']) and item['commonsense_feedback'].lower() == 'none'
+        status = "★ PASSED (ALL SATISFIED)" if is_clean else ("Needs Refinement" if idx > 0 else "Initial Draft")
+        preview = item['sentence'][:30] + ("..." if len(item['sentence']) > 30 else "")
+        print(f"{idx:<8} {status:<25} \"{preview}\"")
+    print("-" * 65)
+
+    # Final accepted sentence
+    final_item = sent_to_fb[-1]
+    print("\n" + "#" * 65)
+    print("                   FINAL ACCEPTED SENTENCE")
+    print("#" * 65)
+    print(f"Sentence : \"{final_item['sentence']}\"")
+    print(f"Concepts : {concepts}")
+    print(f"Missing  : {', '.join(final_item['concept_feedback'])}")
+    print(f"Critique : {final_item['commonsense_feedback']}")
+    print("#" * 65 + "\n")
+
 
 
 def run_iter(inputs_file_path: str, max_attempts: int = 4):

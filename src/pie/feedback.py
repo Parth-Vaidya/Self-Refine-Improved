@@ -25,6 +25,7 @@ class PieFeedback(Prompt):
         generation_query = self.make_query(slow_code=slow_code)
 
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="feedback",
             prompt=generation_query,
             engine=self.engine,
             max_tokens=self.max_tokens,

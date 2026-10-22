@@ -133,3 +133,11 @@ dmypy.json
 # Pyre type checker
 .pyre/
 out-responsegen.json
+
+# Reproducible dependency manifests and local research environment
+!requirements.txt
+!requirements-research-lock.txt
+.env.*
+!.env.example
+.venv-research/
+experiment-results/

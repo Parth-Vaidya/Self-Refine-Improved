@@ -110,6 +110,7 @@ class SentimentTransferFeedback(Prompt):
         
         
         generated_feedback = router.call(
+            stage="feedback",
             prompt=prompt,
             engine=self.engine,
             max_tokens=300,

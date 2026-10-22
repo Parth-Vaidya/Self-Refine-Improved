@@ -33,6 +33,7 @@ class PieIterate(Prompt):
         generation_query = self.make_query(slow_code=slow_code, feedback=feedback)
 
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="refinement",
             prompt=generation_query,
             engine=self.engine,
             max_tokens=300,
@@ -59,7 +60,7 @@ class PieIterate(Prompt):
 # Improved version:
 
 """     
-        query = example_template.format(slow_code=slow_code, feedback=feedback)
+        query = example_template.format(slow_code=slow_code, feedback=feedback, instr=instr)
 
         return f"{self.prompt}{query}"
 

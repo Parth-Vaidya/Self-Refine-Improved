@@ -48,6 +48,13 @@ _With Self-Refine, LLMs can generate feedback on their work, use it to improve t
 
 ## Setup
 
+For controlled A/B/C experiments with **Qwen3 only at the refinement stage**, see
+[Qwen3 setup, methodology, metrics and validation](docs/qwen-experiments.md).
+The existing commands below retain their original behavior.
+See the [executed validation report](reports/validation-report.md) for test results,
+hosted API limitations, and terminal/saved-output examples.
+For HF quota failures, see [optional Groq backup and Groq-only commands](docs/groq-fallback.md).
+
 * We use [prompt-lib](https://github.com/reasoning-machines/prompt-lib) for querying LLMs. You can install `prompt-lib` by running the following commands:
 
 ```sh

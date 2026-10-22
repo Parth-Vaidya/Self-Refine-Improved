@@ -50,6 +50,7 @@ Response: {response}"""
     def __call__(self, context: str) -> str:
         generation_query = self.make_query(context)
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="generation",
             prompt=generation_query,
             engine=self.engine,
             max_tokens=800,

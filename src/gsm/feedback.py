@@ -28,6 +28,7 @@ class GSMFeedback(Prompt):
         print(generation_query)
         # print(1/0)
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="feedback_refinement",
             prompt=generation_query,
             engine=self.engine,
             max_tokens=self.max_tokens,
