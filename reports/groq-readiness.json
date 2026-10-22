@@ -1,0 +1,6 @@
+{
+  "check": "Groq model-list access only; no generation request",
+  "model": "openai/gpt-oss-20b",
+  "status": "model_available",
+  "http_status": 200
+}

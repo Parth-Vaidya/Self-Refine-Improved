@@ -5,7 +5,8 @@ from tqdm import tqdm
 from pandarallel import pandarallel
 import multiprocessing
 
-pandarallel.initialize(progress_bar=True, nb_workers=1)
+if __name__ == "__main__":
+    pandarallel.initialize(progress_bar=True, nb_workers=1)
 
 from src.sentiment_reversal.task_init import SentimentTransferTaskInit
 from src.sentiment_reversal.task_iterate import SentimentTransferTaskIterate
@@ -65,11 +66,10 @@ def iterative_prompting(
                 measured_sentiment = task_measure(review=transferred_review)
                 transferred_reviews_history.append((transferred_review, measured_sentiment))
 
-            if probs is None:
-                probs = 0.0
+            probability = round(math.exp(probs), 3) if probs is not None else None
 
             print(
-                f"{record_id} {n_attempts} TRANSFER> {transferred_review} [{measured_sentiment, round(math.exp(probs), 2)}]"
+                f"{record_id} {n_attempts} TRANSFER> {transferred_review} [{measured_sentiment, probability}]"
             )
 
             feedback = task_feedback(
@@ -95,7 +95,7 @@ def iterative_prompting(
                     "transferred_review_sentiment": measured_sentiment,
                     "feedback": feedback,
                     "log_probability": probs,
-                    "probability": round(math.exp(probs), 3),
+                    "probability": probability,
                 }
             )
             print(f"{record_id} {n_attempts} FB> {feedback}")

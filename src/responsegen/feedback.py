@@ -69,6 +69,7 @@ Here are some examples of this scoring rubric:
         prompt = self.get_prompt_with_question(context=context, response=response)
 
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="feedback",
             prompt=prompt,
             engine=self.engine,
             max_tokens=self.max_tokens,

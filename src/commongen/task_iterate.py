@@ -80,6 +80,7 @@ class CommongenTaskIterate(Prompt):
         self.count += 1
 
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="refinement",
             prompt=transfer_query,
             engine=self.engine,
             max_tokens=300,
@@ -94,7 +95,10 @@ class CommongenTaskIterate(Prompt):
         print(response)
         print("------")
 
-        response = re.search("Sentence: (.*)", response).group(1).strip().split("\n")[0].strip()
+        match = re.search("Sentence: (.*)", response)
+        if match is None:
+            raise ValueError("Refinement response is missing the Sentence label.")
+        response = match.group(1).strip().split("\n")[0].strip()
 
         return response.strip()
 

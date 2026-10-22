@@ -12,7 +12,8 @@ import multiprocessing
 import traceback
 import argparse
 
-pandarallel.initialize(progress_bar=True, nb_workers=25)
+if __name__ == "__main__":
+    pandarallel.initialize(progress_bar=True, nb_workers=25)
 
 
 from src.responsegen.task_init import ResponseGenTaskInit
@@ -67,6 +68,10 @@ def iterative_response(context: str, max_attempts: int) -> str:
             # exit(0)
             #context = new_context
 
+        if "total_tokens" not in (metaoutput.get("usage") or {}):
+            from prompt_lib.backends.huggingface_api import InferenceError
+            raise InferenceError("Dialogue requires reported total_tokens for its existing context-window rule.")
+
         print(f"\n{n_attempts} CONTEXT> {context} \n\n RESPONSE> {response} - NTOKENS> {metaoutput['usage']['total_tokens']}")
         
         if metaoutput['usage']['total_tokens'] >3000:
@@ -75,7 +80,7 @@ def iterative_response(context: str, max_attempts: int) -> str:
                 reduce_window +=1
 
         feedbackmetaoutput, scores = task_feedback(context=context, response=response)
-        print(f"\n{n_attempts} SCORES> {scores} - NTOKENS> {feedbackmetaoutput['usage']['total_tokens']}")
+        print(f"\n{n_attempts} SCORES> {scores} - NTOKENS> {feedbackmetaoutput.get('usage', {}).get('total_tokens', 'unavailable')}")
 
         total_score = re.search(r"Total score: (\d+)/(\d+)", scores).group(0)
         total_score = int(total_score.split(":")[1].strip().split("/")[0])
@@ -86,7 +91,7 @@ def iterative_response(context: str, max_attempts: int) -> str:
             "total_score": total_score,
             "context": context,
         }
-        # rtokens, ftokens = metaoutput['usage']['total_tokens'], feedbackmetaoutput['usage']['total_tokens']
+        # rtokens, ftokens = metaoutput['usage']['total_tokens'], feedbackmetaoutput.get('usage', {}).get('total_tokens', 'unavailable')
         if total_score >= 0:  # only iterate over things that are improving
             best_score_so_far = total_score
             

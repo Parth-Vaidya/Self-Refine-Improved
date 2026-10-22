@@ -103,6 +103,7 @@ Okay, let's use this feedback to improve the acronym.
             f.write(transfer_query + "\n")
 
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="refinement",
             prompt=transfer_query,
             engine=self.engine,
             max_tokens=300,

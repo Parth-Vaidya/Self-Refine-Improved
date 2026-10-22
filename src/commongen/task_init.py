@@ -38,6 +38,7 @@ Sentence: {sentence}"""
         generation_query = self.make_query(concepts) + "\nDo your best! It's okay if the sentence is not coherent.\n"
 
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="generation",
             prompt=generation_query,
             engine=self.engine,
             max_tokens=300,

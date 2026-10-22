@@ -35,6 +35,7 @@ Acronym: {answer}"""
         generation_query = self.make_query(title)
 
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="generation",
             prompt=generation_query,
             engine=self.engine,
             max_tokens=300,

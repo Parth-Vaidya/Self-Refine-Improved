@@ -28,6 +28,7 @@ class GSMInit(Prompt):
     def __call__(self, solution: str) -> str:
         generation_query = self.make_query(solution)
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="generation",
             prompt=generation_query,
             engine=self.engine,
             max_tokens=300,

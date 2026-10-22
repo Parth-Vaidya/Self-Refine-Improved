@@ -44,6 +44,7 @@ class SentimentTransferMeasurement(Prompt):
         measurement_query = self.make_input(review)
         measurement_query = self.make_query(measurement_query)
         measured_sentiment = router.call(
+            stage="measurement",
             prompt=measurement_query,
             engine=self.engine,
             max_tokens=50,

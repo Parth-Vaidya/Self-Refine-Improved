@@ -1,3 +1,4 @@
+from prompt_lib.experiment import select_model
 import sys
 import numpy as np
 import pandas as pd
@@ -67,8 +68,9 @@ NLP Research Project. Please rewrite this review to have a {target_sentiment} se
             "stop_token": self.inter_example_sep,
             "temperature": 0.7,
             "return_entire_response": True,
+            "stage": "generation",
         }
-        if self.engine not in ["gpt-3.5-turbo", "gpt-4"]:
+        if not select_model("generation", self.engine).startswith(("hf:", "groq:")) and self.engine not in ["gpt-3.5-turbo", "gpt-4"]:
             args["logprobs"] = 1
         transferred_input = router.few_shot_query(**args)
 

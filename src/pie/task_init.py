@@ -28,6 +28,7 @@ class PieInit(Prompt):
     def __call__(self, slow_code: str) -> str:
         generation_query = self.make_query(slow_code)
         output = openai_api.OpenaiAPIWrapper.call(
+            stage="generation",
             prompt=generation_query,
             engine=self.engine,
             max_tokens=300,
