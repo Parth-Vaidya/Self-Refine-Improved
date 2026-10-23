@@ -155,3 +155,17 @@ out-responsegen.json
 !requirements-research-lock.txt
 .venv-research/
 experiment-results/
+
+# Local query runs: raw results and readable reports
+/newton-*.jsonl
+/newton-*.md
+/query-*.jsonl
+/query-*.md
+/*-results.jsonl
+
+# In-progress dialogue checkpoints and atomic-write temporary files
+*.checkpoint.json
+*.checkpoint.json.tmp
+
+# The request-budget ledger lives in the already-ignored .cache directory.
+# Ignoring it does not reset the counter; keep the local database intact.

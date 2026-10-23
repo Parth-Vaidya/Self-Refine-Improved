@@ -133,18 +133,19 @@ Conversation history:
         )
         transfer_query = self.make_query(example_input, reduce_window=reduce_window)
         self.count += 1
-        with open(f"responses_iterate_{self.count}.txt", "w") as f:
+        with open(f"responses_iterate_{self.count}.txt", "w", encoding="utf-8") as f:
             f.write(transfer_query + "\n")
         output = openai_api.OpenaiAPIWrapper.call(
             stage="refinement",
             prompt=transfer_query,
             engine=self.engine,
-            max_tokens=200,
+            max_tokens=2048,
             stop_token=self.inter_example_sep,
             temperature=0.7,
         )
         modelresponse = openai_api.OpenaiAPIWrapper.get_first_response(output)
-        response = modelresponse.split("Response:")[1].strip().split("\n")[0].strip()
+        from src.responsegen.parsing import response_text
+        response = response_text(modelresponse)
 
         
         return output, response.strip()

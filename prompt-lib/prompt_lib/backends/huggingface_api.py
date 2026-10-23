@@ -27,6 +27,10 @@ class HostedChatAPIWrapper:
     endpoint = ENDPOINT
 
     @classmethod
+    def before_attempt(cls):
+        pass
+
+    @classmethod
     def call(cls, prompt, max_tokens=300, engine=None, stop_token=None,
              temperature=0.7, num_completions=1, system_message=None,
              top_p=1.0, logprobs=None, **kwargs):
@@ -40,6 +44,8 @@ class HostedChatAPIWrapper:
                 raise ValueError()
         except (ValueError, TypeError):
             raise InferenceError("Invalid " + cls.label + " timeout or retry configuration.") from None
+        if cls.label == "Groq":
+            retries = 5 if os.getenv("GROQ_RESUME_ON_RATE_LIMIT", "false").lower() == "true" else 0
         if kwargs or num_completions != 1 or logprobs is not None:
             raise InferenceError(cls.label + " adapter requires one completion and no legacy logprobs or extra options.")
         model = (engine or "").removeprefix(cls.engine_prefix)
@@ -56,6 +62,12 @@ class HostedChatAPIWrapper:
         started = time.perf_counter()
         for attempt in range(retries + 1):
             retry_after = 0
+            cls.before_attempt()
+            from prompt_lib.backends.request_budget import reserve
+            try:
+                reserve()
+            except Exception:
+                raise InferenceError("Request budget unavailable or exhausted (hard limit: 700).") from None
             try:
                 response = requests.post(cls.endpoint, headers={"Authorization": "Bearer " + token},
                                          json=payload, timeout=timeout, allow_redirects=False)
@@ -84,7 +96,14 @@ class HostedChatAPIWrapper:
                     finally:
                         response.close()
                 try:
-                    retry_after = min(60, max(0, float(response.headers.get("Retry-After", 0))))
+                    if cls.label == "Groq" and status == 429 and attempt < retries:
+                        from prompt_lib.backends.groq_pacing import retry_delay
+                        retry_after = retry_delay(response.headers.get("Retry-After"), status)
+                    elif cls.label != "Groq":
+                        retry_after = min(60, max(0, float(response.headers.get("Retry-After", 0))))
+                except InferenceError:
+                    response.close()
+                    raise
                 except (ValueError, TypeError):
                     pass
                 response.close()
@@ -98,9 +117,15 @@ class HostedChatAPIWrapper:
             except requests.RequestException:
                 status = None
                 retryable, message = False, cls.label + " transport request failed."
+            if cls.label == "Groq" and status != 429:
+                retryable = False
             if not retryable or attempt == retries:
                 raise InferenceError(message, status_code=status, attempts=attempt + 1) from None
-            time.sleep(max(retry_after, min(2 ** attempt, 30)))
+            if cls.label == "Groq":
+                from prompt_lib.backends.groq_pacing import wait
+                wait(max(retry_after, 1))
+            else:
+                time.sleep(max(retry_after, min(2 ** attempt, 30)))
 
     @staticmethod
     def get_first_response(response):

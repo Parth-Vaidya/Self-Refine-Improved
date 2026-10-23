@@ -25,6 +25,12 @@ def response(text="refined", status=200, usage=None):
 
 class AdapterTests(unittest.TestCase):
     def setUp(self):
+        pacing = patch.dict(os.environ, {"GROQ_MIN_INTERVAL_SECONDS": "0"})
+        pacing.start()
+        self.addCleanup(pacing.stop)
+        budget_patch = patch("prompt_lib.backends.request_budget.reserve", return_value=1)
+        budget_patch.start()
+        self.addCleanup(budget_patch.stop)
         self.env = patch.dict(os.environ, {"HF_TOKEN": "test-secret-not-real", "HF_MAX_RETRIES": "1", "HF_TIMEOUT": "5", "HF_GROQ_FALLBACK": "false"})
         self.env.start()
         self.addCleanup(self.env.stop)
@@ -82,6 +88,12 @@ class AdapterTests(unittest.TestCase):
 
 class RoutingTests(unittest.TestCase):
     def setUp(self):
+        pacing = patch.dict(os.environ, {"GROQ_MIN_INTERVAL_SECONDS": "0"})
+        pacing.start()
+        self.addCleanup(pacing.stop)
+        budget_patch = patch("prompt_lib.backends.request_budget.reserve", return_value=1)
+        budget_patch.start()
+        self.addCleanup(budget_patch.stop)
         env = patch.dict(os.environ, {"HF_GROQ_FALLBACK": "false"})
         env.start()
         self.addCleanup(env.stop)
@@ -199,6 +211,10 @@ class RoutingTests(unittest.TestCase):
                 main()
             saved = json.loads(dest.read_text())
             self.assertEqual(saved["final_output"], "SAVED")
+            readable = dest.with_suffix(".md").read_text(encoding="utf-8")
+            self.assertIn("## Final answer\n\nSAVED", readable)
+            self.assertNotIn("file_sha256", readable)
+            self.assertNotIn("test-secret-not-real", readable)
             self.assertEqual(saved["input"], {"title": "my title"})
             self.assertIn("FINAL OUTPUT\nSAVED", terminal.getvalue())
             self.assertNotIn("test-secret-not-real", dest.read_text())

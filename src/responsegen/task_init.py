@@ -53,14 +53,15 @@ Response: {response}"""
             stage="generation",
             prompt=generation_query,
             engine=self.engine,
-            max_tokens=800,
+            max_tokens=2048,
             stop_token="###",
             temperature=0.7,
         )
 
         generated_response = openai_api.OpenaiAPIWrapper.get_first_response(output)
 
-        generated_response = generated_response.split(self.answer_prefix)[1].replace("#", "").strip()
+        from src.responsegen.parsing import response_text
+        generated_response = response_text(generated_response)
 
 
         return output, generated_response.strip()
