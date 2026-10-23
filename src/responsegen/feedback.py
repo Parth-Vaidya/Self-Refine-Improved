@@ -5,7 +5,7 @@ from src.utils import Prompt
 
 
 class ResponseGenFeedback(Prompt):
-    def __init__(self, engine: str, prompt_examples: str, max_tokens: int = 400) -> None:
+    def __init__(self, engine: str, prompt_examples: str, max_tokens: int = 2048) -> None:
         super().__init__(
             question_prefix="",
             answer_prefix="",
@@ -78,8 +78,8 @@ Here are some examples of this scoring rubric:
         )
         
         generated_feedback = openai_api.OpenaiAPIWrapper.get_first_response(output)
-        generated_feedback = generated_feedback.split("Scores:")[1].strip()
-        generated_feedback = generated_feedback.split("#")[0].strip()
+        from src.responsegen.parsing import feedback_text
+        generated_feedback = feedback_text(generated_feedback)
 
         return output, generated_feedback
 

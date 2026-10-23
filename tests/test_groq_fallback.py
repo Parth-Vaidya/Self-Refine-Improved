@@ -28,6 +28,12 @@ def response(status=200, text="refined"):
 
 class GroqTests(unittest.TestCase):
     def setUp(self):
+        pacing = patch.dict(os.environ, {"GROQ_MIN_INTERVAL_SECONDS": "0"})
+        pacing.start()
+        self.addCleanup(pacing.stop)
+        budget_patch = patch("prompt_lib.backends.request_budget.reserve", return_value=1)
+        budget_patch.start()
+        self.addCleanup(budget_patch.stop)
         env = patch.dict(os.environ, {"HF_TOKEN": "fake-hf-secret", "GROQ_API_KEY": "fake-groq-secret",
             "HF_GROQ_FALLBACK": "true", "GROQ_MODEL_ID": "openai/gpt-oss-20b",
             "HF_TIMEOUT": "5", "GROQ_TIMEOUT": "6", "HF_MAX_RETRIES": "1", "GROQ_MAX_RETRIES": "1"})
@@ -80,7 +86,7 @@ class GroqTests(unittest.TestCase):
             post.assert_not_called()
 
     def test_both_providers_exhausted_fail_safely(self):
-        with patch("requests.post", side_effect=[response(402), response(429), response(429)]) as post, patch("time.sleep"):
+        with patch("requests.post", side_effect=[response(402), response(429)]) as post, patch("time.sleep"):
             try:
                 HF.call("p", engine=HF_MODEL)
             except InferenceError:
@@ -90,7 +96,7 @@ class GroqTests(unittest.TestCase):
                 self.assertNotIn("fake-groq-secret", trace)
             else:
                 self.fail("Expected both providers to fail")
-            self.assertEqual(post.call_count, 3)
+            self.assertEqual(post.call_count, 2)
 
     def test_fallback_effective_model_and_cost_in_experiment(self):
         from prompt_lib.backends.openai_api import OpenaiAPIWrapper

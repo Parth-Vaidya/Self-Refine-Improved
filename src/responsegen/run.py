@@ -68,6 +68,19 @@ def iterative_response(context: str, max_attempts: int) -> str:
             # exit(0)
             #context = new_context
 
+        # Checkpoint parsed answers before scoring, so a later API failure cannot
+        # discard useful work. Only the experiment runner consumes this state.
+        from prompt_lib.experiment import CURRENT
+        state = CURRENT.get()
+        if state is not None:
+            pending = dict(all_responses_to_scores)
+            pending[response] = dict(n_attempts=n_attempts, context=context,
+                                     scores=None, total_score=None, feedback_status="unavailable")
+            state["dialogue_checkpoint"] = pending
+            state["dialogue_latest"] = response
+            if state.get("save_checkpoint"):
+                state["save_checkpoint"]()
+
         if "total_tokens" not in (metaoutput.get("usage") or {}):
             from prompt_lib.backends.huggingface_api import InferenceError
             raise InferenceError("Dialogue requires reported total_tokens for its existing context-window rule.")
@@ -91,6 +104,10 @@ def iterative_response(context: str, max_attempts: int) -> str:
             "total_score": total_score,
             "context": context,
         }
+        if state is not None:
+            state["dialogue_checkpoint"] = dict(all_responses_to_scores)
+            if state.get("save_checkpoint"):
+                state["save_checkpoint"]()
         # rtokens, ftokens = metaoutput['usage']['total_tokens'], feedbackmetaoutput.get('usage', {}).get('total_tokens', 'unavailable')
         if total_score >= 0:  # only iterate over things that are improving
             best_score_so_far = total_score

@@ -114,7 +114,7 @@ def iterative(task, row, attempts, temperature, feedback_type):
     return fn(**kwargs)
 
 
-def run_record(task, row, config, attempts=4, temperature=0.0, feedback_type="rich"):
+def run_record(task, row, config, attempts=4, temperature=0.0, feedback_type="rich", checkpoint_path=None):
     if attempts < 1:
         raise InferenceError("max_attempts must be positive.")
     if task == "readability" and config["variant"] == "A":
@@ -122,7 +122,9 @@ def run_record(task, row, config, attempts=4, temperature=0.0, feedback_type="ri
     if task == "gsm" and config["variant"] == "C":
         raise InferenceError("GSM has no separate refinement stage; C would change its methodology.")
     terminal = sys.stdout
-    show("ORIGINAL USER INPUT", row, terminal)
+    if hasattr(terminal, "reconfigure"):
+        terminal.reconfigure(encoding="utf-8", errors="replace")
+    show("ORIGINAL USER INPUT", row["context"] if task == "responsegen" else row, terminal)
     iteration = [0]
 
     def on_output(stage, text):
@@ -134,6 +136,17 @@ def run_record(task, row, config, attempts=4, temperature=0.0, feedback_type="ri
 
     state = dict(config, calls=[], on_output=on_output,
                  on_fallback=lambda info: show("HF TO GROQ FALLBACK", info, terminal))
+    def save_checkpoint():
+        if checkpoint_path is not None:
+            path = Path(checkpoint_path)
+            temporary = path.with_suffix(path.suffix + ".tmp")
+            content = dict(input=row, answers=state.get("dialogue_checkpoint"),
+                           latest_answer=state.get("dialogue_latest"),
+                           note="In-progress checkpoint; automatic recovery continues only within this running process.")
+            with temporary.open("x", encoding="utf-8") as stream:
+                stream.write(redact(json.dumps(content, ensure_ascii=False, indent=2)))
+            temporary.replace(path)
+    state["save_checkpoint"] = save_checkpoint
     marker = CURRENT.set(state)
     started = time.perf_counter()
     record = {"input": json.loads(redact(json.dumps(row))), "status": "error", "result": None, "final_output": None, "quality": None,
@@ -165,7 +178,18 @@ def run_record(task, row, config, attempts=4, temperature=0.0, feedback_type="ri
         record["status"] = "error"
         record["error"] = (redact(str(exc)) if isinstance(exc, InferenceError) else
                            "Experiment failed; inspect call statuses, task input format and required dependencies.")
-        show("EXPERIMENT FAILED", record["error"], terminal)
+        checkpoint = state.get("dialogue_checkpoint")
+        if task == "responsegen" and checkpoint and isinstance(exc, InferenceError):
+            record.update(status="partial", result=json.loads(redact(json.dumps(checkpoint))),
+                          final_output=redact(state["dialogue_latest"]),
+                          selection_reason="Latest completed answer; experiment interrupted before all requested stages completed.")
+            record["quality"] = [{"candidate": answer, "score": details.get("total_score"),
+                                  "feedback": details.get("scores")} for answer, details in record["result"].items()]
+            record["quality_status"] = "Partial model feedback; missing scores are unavailable, not zero."
+            show("PARTIAL COMPLETION", record["error"] + " Last completed answer preserved.", terminal)
+            show("SAVED ANSWER", record["final_output"], terminal)
+        else:
+            show("EXPERIMENT FAILED", record["error"], terminal)
     finally:
         record["latency_seconds"] = time.perf_counter() - started
         record["calls"] = state["calls"]
@@ -209,18 +233,32 @@ def main():
                 "max_attempts": args.max_attempts, "temperature": args.temperature,
                 "feedback_type": args.feedback_type,
                 "file_sha256": {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in paths}}
+    if Path(args.output).exists():
+        raise FileExistsError(args.output)
+    checkpoint_path = Path(str(args.output) + ".checkpoint.json")
+    if checkpoint_path.exists() or Path(str(checkpoint_path) + ".tmp").exists():
+        parser.error("Checkpoint path already exists; choose a new output filename")
+    report_path = Path(args.output).with_suffix(".md")
+    if report_path.exists() or report_path.resolve() == Path(args.output).resolve():
+        parser.error("Readable report path already exists or conflicts with output; choose a new output filename")
     with open(args.output, "x", encoding="utf-8") as out:
         failures = 0
+        partials = 0
         for line in data.decode("utf-8-sig").splitlines():
             if line.strip():
                 result = run_record(args.task, json.loads(line), config, args.max_attempts,
-                                    args.temperature, args.feedback_type)
+                                    args.temperature, args.feedback_type,
+                                    checkpoint_path=str(args.output) + ".checkpoint.json")
                 out.write(json.dumps(dict(result, experiment=manifest)) + "\n")
                 out.flush()
-                failures += result["status"] != "success"
-    print(f"Saved results to {args.output}. Failed records: {failures}")
-    if failures:
-        raise SystemExit(1)
+                failures += result["status"] == "error"
+                partials += result["status"] == "partial"
+    from src.report import write_report
+    write_report(args.output, report_path)
+    print(f"Readable report: {report_path}")
+    print(f"Saved results to {args.output}. Failed records: {failures}. Partial records: {partials}")
+    if failures or partials:
+        raise SystemExit(1 if failures else 2)
 
 
 if __name__ == "__main__":
