@@ -1,5 +1,8 @@
 # Prompt-lib
 
+> [!NOTE]
+> **Project Integration Note:** In this repository, `prompt-lib` serves as the unified inference and telemetry transport layer for Self-Refine. It provides isolated provider adapters (Groq, Hugging Face, Gemini, OpenAI, Anthropic), request-budget management (`prompt_lib/backends/request_budget.py`), provider failover pacing (`prompt_lib/backends/groq_pacing.py`), and non-invasive experiment telemetry tracking (`prompt_lib/experiment.py`).
+
 - A library for hassle-free few-shot prompting.
 
 TLDR: This library makes it easy to write prompts for few-shot prompting tasks. It includes rate-limiting and retry logic, and makes it easy to write prompts for different tasks.
