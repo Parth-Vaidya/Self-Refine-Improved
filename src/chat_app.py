@@ -35,12 +35,13 @@ def print_main_menu() -> None:
 
 def default_generate_response(
     context: str,
+    mode: str = "self_refine",
     engine: str = DEFAULT_ENGINE,
     attempts: int = DEFAULT_ATTEMPTS,
 ) -> str:
-    """Generate response using dedicated interactive chat pipeline with refinement."""
+    """Generate response using dedicated interactive chat pipeline in chosen mode."""
     pipeline = ChatResponsePipeline(engine=engine, max_attempts=attempts)
-    return pipeline.generate_chat_response(context)
+    return pipeline.generate_chat_response(context, mode=mode)
 
 
 class ChatApp:
@@ -63,6 +64,33 @@ class ChatApp:
         except (EOFError, KeyboardInterrupt):
             return None
 
+    def _prompt_response_mode(self) -> Optional[str]:
+        """Prompt user for Standard vs Self-Refine generation mode."""
+        print("\nHow would you like to generate your response?")
+        print("1. Standard Response")
+        print("2. Self-Refine Response")
+        while True:
+            choice = self._prompt("Select an option (1 or 2): ")
+            if choice is None:
+                return None
+            choice = choice.strip()
+            if choice == "1":
+                return "standard"
+            elif choice == "2":
+                return "self_refine"
+            else:
+                print("Invalid choice. Please enter 1 for Standard Response or 2 for Self-Refine Response.")
+
+    def _call_response_fn(self, context: str, mode: str) -> str:
+        """Invoke response function, passing mode if accepted, else falling back to context only."""
+        try:
+            return self.response_fn(context, mode=mode)
+        except TypeError:
+            try:
+                return self.response_fn(context, mode)
+            except TypeError:
+                return self.response_fn(context)
+
     def _chat_loop(self, conv_id: str, auto_title_pending: bool = False) -> bool:
         """Run interactive turn loop. Returns False if user requested full app exit."""
         print("Type your message below. Enter 'menu' to return to the main menu, or 'quit' to exit.\n")
@@ -82,17 +110,23 @@ class ChatApp:
                 print("Goodbye!")
                 return False
 
+            # Prompt user for response mode for this message
+            mode = self._prompt_response_mode()
+            if mode is None:
+                print("\nGoodbye!")
+                return False
+
             if auto_title_pending:
                 self.manager.update_title(conv_id, generate_title_from_query(stripped))
                 auto_title_pending = False
 
-            self.manager.save_message(conv_id, "user", stripped)
+            self.manager.save_message(conv_id, "user", stripped, mode=mode)
             context = self.manager.get_context_for_llm(
                 conv_id, max_chars=self.max_context_chars
             )
 
             try:
-                reply = self.response_fn(context)
+                reply = self._call_response_fn(context, mode=mode)
             except InferenceError as err:
                 if "rate limit" in str(err).lower():
                     print("Assistant: [Notice] Groq rate limit reached. The service is temporarily busy; please wait a moment and try again.\n")
@@ -162,7 +196,8 @@ class ChatApp:
             print("--- Recent history ---")
             for msg in messages[-6:]:
                 speaker = "You" if msg["role"] == "user" else "Assistant"
-                print(f"{speaker}: {msg['content']}")
+                mode_str = f" [{msg['mode']}]" if msg.get("mode") else ""
+                print(f"{speaker}{mode_str}: {msg['content']}")
             print("----------------------\n")
         else:
             print("(No messages in this conversation yet.)\n")

@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 TIMESTAMP_FORMAT = "%Y-%m-%d %H:%M:%S"
 HEADER_DIVIDER = "=" * 40
 MESSAGE_HEADER_RE = re.compile(
-    r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] (USER|ASSISTANT):$"
+    r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] (USER|ASSISTANT)(?: \[mode: ([a-zA-Z0-9_-]+)\])?:$"
 )
 CONV_ID_RE = re.compile(r"^chat_(\d+)\.txt$")
 
@@ -82,8 +82,9 @@ class ConversationManager:
         for msg in messages:
             role = msg["role"].upper()
             timestamp = msg.get("timestamp") or updated
+            mode_tag = f" [mode: {msg['mode']}]" if msg.get("mode") else ""
             content = msg["content"].rstrip("\n")
-            lines.append(f"[{timestamp}] {role}:")
+            lines.append(f"[{timestamp}] {role}{mode_tag}:")
             lines.append(content)
             lines.append("")
         return "\n".join(lines)
@@ -119,6 +120,7 @@ class ConversationManager:
         messages: List[Dict[str, str]] = []
         current_role: Optional[str] = None
         current_ts: Optional[str] = None
+        current_mode: Optional[str] = None
         current_lines: List[str] = []
 
         def flush_current() -> None:
@@ -128,13 +130,14 @@ class ConversationManager:
             body = list(current_lines)
             while body and body[-1] == "":
                 body.pop()
-            messages.append(
-                {
-                    "role": current_role.lower(),
-                    "content": "\n".join(body),
-                    "timestamp": current_ts or "",
-                }
-            )
+            msg_dict: Dict[str, str] = {
+                "role": current_role.lower(),
+                "content": "\n".join(body),
+                "timestamp": current_ts or "",
+            }
+            if current_mode:
+                msg_dict["mode"] = current_mode
+            messages.append(msg_dict)
 
         for line in lines[idx:]:
             match = MESSAGE_HEADER_RE.match(line)
@@ -142,6 +145,7 @@ class ConversationManager:
                 flush_current()
                 current_ts = match.group(1)
                 current_role = match.group(2)
+                current_mode = match.group(3)
                 current_lines = []
             elif current_role is not None:
                 current_lines.append(line)
@@ -211,7 +215,7 @@ class ConversationManager:
             raise FileNotFoundError(f"Conversation '{conv_id}' does not exist.")
         return self._parse_file(path)
 
-    def save_message(self, conv_id: str, role: str, content: str) -> None:
+    def save_message(self, conv_id: str, role: str, content: str, mode: Optional[str] = None) -> None:
         """Append a user or assistant message and update the Last Updated timestamp."""
         normalized_role = role.strip().lower()
         if normalized_role not in ("user", "assistant"):
@@ -220,13 +224,14 @@ class ConversationManager:
         data = self.load_conversation(conv_id)
         now = _now_str()
         messages: List[Dict[str, str]] = list(data["messages"])  # type: ignore[arg-type]
-        messages.append(
-            {
-                "role": normalized_role,
-                "content": content,
-                "timestamp": now,
-            }
-        )
+        msg_dict: Dict[str, str] = {
+            "role": normalized_role,
+            "content": content,
+            "timestamp": now,
+        }
+        if mode:
+            msg_dict["mode"] = mode
+        messages.append(msg_dict)
         path = self._conversation_path(conv_id)
         path.write_text(
             self._format_file(

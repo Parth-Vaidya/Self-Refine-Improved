@@ -140,6 +140,52 @@ class ConversationManagerTests(unittest.TestCase):
         self.assertTrue(generated.endswith("..."))
         self.assertTrue(generate_title_from_query("").startswith("Chat "))
 
+    def test_save_and_load_mode_metadata(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            manager = ConversationManager(tmpdir)
+            conv_id = manager.create_conversation("Modes Test")
+            manager.save_message(conv_id, "user", "Message 1", mode="standard")
+            manager.save_message(conv_id, "assistant", "Answer 1")
+            manager.save_message(conv_id, "user", "Message 2", mode="self_refine")
+            manager.save_message(conv_id, "assistant", "Answer 2")
+
+            loaded = manager.load_conversation(conv_id)
+            messages = loaded["messages"]
+            self.assertEqual(len(messages), 4)
+            self.assertEqual(messages[0].get("mode"), "standard")
+            self.assertIsNone(messages[1].get("mode"))
+            self.assertEqual(messages[2].get("mode"), "self_refine")
+            self.assertIsNone(messages[3].get("mode"))
+
+            raw_txt = (Path(tmpdir) / f"{conv_id}.txt").read_text(encoding="utf-8")
+            self.assertIn("USER [mode: standard]:", raw_txt)
+            self.assertIn("USER [mode: self_refine]:", raw_txt)
+            self.assertIn("ASSISTANT:", raw_txt)
+
+    def test_backward_compatibility_with_older_txt_without_modes(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            raw_legacy = (
+                "========================================\n"
+                "Conversation ID: chat_099\n"
+                "Title: Legacy Chat\n"
+                "Created: 2026-11-10 10:00:00\n"
+                "Last Updated: 2026-11-10 10:05:00\n"
+                "========================================\n\n"
+                "[2026-11-10 10:00:00] USER:\n"
+                "Old message\n\n"
+                "[2026-11-10 10:00:05] ASSISTANT:\n"
+                "Old response\n\n"
+            )
+            chat_file = Path(tmpdir) / "chat_099.txt"
+            chat_file.write_text(raw_legacy, encoding="utf-8")
+
+            manager = ConversationManager(tmpdir)
+            loaded = manager.load_conversation("chat_099")
+            self.assertEqual(loaded["title"], "Legacy Chat")
+            self.assertEqual(len(loaded["messages"]), 2)
+            self.assertEqual(loaded["messages"][0]["content"], "Old message")
+            self.assertIsNone(loaded["messages"][0].get("mode"))
+
 
 if __name__ == "__main__":
     unittest.main()

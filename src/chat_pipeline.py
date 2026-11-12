@@ -99,14 +99,15 @@ class ChatResponsePipeline:
         prompt = REFINE_PROMPT_TEMPLATE.format(context=context, response=response, feedback=feedback)
         return self._call_model(prompt, stage="refinement")
 
-    def generate_chat_response(self, context: str) -> str:
-        """Generate response with optional iterative self-refine, falling back gracefully."""
-        # 1. Initial generation
+    def generate_chat_response(self, context: str, mode: str = "self_refine") -> str:
+        """Generate response in either 'standard' (single-pass) or 'self_refine' mode."""
+        # 1. Initial generation (used by both modes)
         initial_response = self.generate_initial(context)
         if not initial_response:
             raise InferenceError("Model returned an empty initial response.")
 
-        if self.max_attempts <= 1:
+        # If Standard mode was chosen or max_attempts <= 1, do not perform feedback or refinement
+        if mode == "standard" or self.max_attempts <= 1:
             return initial_response
 
         # 2. Refinement loop with graceful fallback to best response so far
