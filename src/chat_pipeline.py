@@ -2,12 +2,47 @@
 
 from __future__ import annotations
 
+import json
 import os
+from pathlib import Path
 import re
 from typing import Dict, List, Optional, Tuple
 
 from prompt_lib.backends import openai_api
 from prompt_lib.backends.huggingface_api import InferenceError
+
+
+DEFAULT_PROFILE_PATH = "user_profile.json"
+
+
+def load_personalization_instruction(profile_path: str | Path = DEFAULT_PROFILE_PATH) -> Optional[str]:
+    """Load enabled preferences from user_profile.json and build a concise instruction."""
+    path = Path(profile_path)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return None
+        preferences = data.get("preferences", {})
+        if not isinstance(preferences, dict):
+            return None
+
+        enabled_descs: List[str] = []
+        for pref_key, pref_val in preferences.items():
+            if isinstance(pref_val, dict) and pref_val.get("enabled") is True:
+                desc = pref_val.get("description") or pref_key
+                enabled_descs.append(str(desc).strip())
+
+        if not enabled_descs:
+            return None
+
+        # Build concise instruction for the LLM
+        formatted = "; ".join(enabled_descs)
+        return f"User preferences: Please adhere to the following style preferences where applicable: {formatted}."
+    except Exception:
+        # Gracefully handle missing, empty, or corrupt profile files
+        return None
 
 
 CHAT_INSTRUCTION = (
@@ -16,7 +51,7 @@ CHAT_INSTRUCTION = (
 )
 
 FEEDBACK_PROMPT_TEMPLATE = """You are evaluating an assistant's draft response to a user in a conversation.
-
+{personalization_section}
 Conversation History:
 {context}
 
@@ -26,7 +61,7 @@ Draft Response:
 Critique the draft response on:
 1. Relevance and helpfulness
 2. Accuracy and clarity
-3. Tone and coherence
+3. Tone and coherence{personalization_criteria}
 
 Conclude your critique with a single line formatted exactly as:
 Critique Summary: <one sentence summary of improvements needed, or 'None' if the response is excellent>
@@ -34,7 +69,7 @@ Total score: <score between 0 and 10>/10
 """
 
 REFINE_PROMPT_TEMPLATE = """You are refining an assistant's response in an ongoing conversation based on feedback.
-
+{personalization_section}
 Conversation History:
 {context}
 
@@ -66,9 +101,15 @@ def parse_chat_feedback(feedback_text: str) -> Tuple[str, int]:
 class ChatResponsePipeline:
     """Handles generation, feedback, and refinement for interactive chat."""
 
-    def __init__(self, engine: str = "groq:qwen/qwen3.8-27b", max_attempts: int = 2) -> None:
+    def __init__(
+        self,
+        engine: str = "groq:qwen/qwen3.8-27b",
+        max_attempts: int = 2,
+        profile_path: str | Path = DEFAULT_PROFILE_PATH,
+    ) -> None:
         self.engine = engine
         self.max_attempts = max_attempts
+        self.profile_path = profile_path
 
     def _call_model(self, prompt: str, stage: str, max_tokens: int = 2048, stop_token: Optional[str] = None) -> str:
         output = openai_api.OpenaiAPIWrapper.call(
@@ -86,23 +127,42 @@ class ChatResponsePipeline:
             content = str(first_resp)
         return content.strip()
 
-    def generate_initial(self, context: str) -> str:
-        prompt = f"{CHAT_INSTRUCTION}\n\nConversation history:\n{context}\n\nAssistant:"
+    def generate_initial(self, context: str, personalization: Optional[str] = None) -> str:
+        instruction = CHAT_INSTRUCTION
+        if personalization:
+            instruction = f"{instruction} {personalization}"
+        prompt = f"{instruction}\n\nConversation history:\n{context}\n\nAssistant:"
         return self._call_model(prompt, stage="generation")
 
-    def get_feedback(self, context: str, response: str) -> Tuple[str, int]:
-        prompt = FEEDBACK_PROMPT_TEMPLATE.format(context=context, response=response)
+    def get_feedback(self, context: str, response: str, personalization: Optional[str] = None) -> Tuple[str, int]:
+        p_section = f"\n{personalization}\n" if personalization else ""
+        p_criteria = "\n4. Adherence to user preferences" if personalization else ""
+        prompt = FEEDBACK_PROMPT_TEMPLATE.format(
+            personalization_section=p_section,
+            personalization_criteria=p_criteria,
+            context=context,
+            response=response,
+        )
         raw_feedback = self._call_model(prompt, stage="feedback", max_tokens=512)
         return parse_chat_feedback(raw_feedback)
 
-    def refine(self, context: str, response: str, feedback: str) -> str:
-        prompt = REFINE_PROMPT_TEMPLATE.format(context=context, response=response, feedback=feedback)
+    def refine(self, context: str, response: str, feedback: str, personalization: Optional[str] = None) -> str:
+        p_section = f"\n{personalization}\n" if personalization else ""
+        prompt = REFINE_PROMPT_TEMPLATE.format(
+            personalization_section=p_section,
+            context=context,
+            response=response,
+            feedback=feedback,
+        )
         return self._call_model(prompt, stage="refinement")
 
     def generate_chat_response(self, context: str, mode: str = "self_refine") -> str:
-        """Generate response in either 'standard' (single-pass) or 'self_refine' mode."""
-        # 1. Initial generation (used by both modes)
-        initial_response = self.generate_initial(context)
+        """Generate response in either 'standard' (single-pass) or 'self_refine' mode with personalization."""
+        # Load user personalization instruction once per response generation
+        personalization = load_personalization_instruction(self.profile_path)
+
+        # 1. Initial generation (applies personalization instruction to both modes)
+        initial_response = self.generate_initial(context, personalization=personalization)
         if not initial_response:
             raise InferenceError("Model returned an empty initial response.")
 
@@ -114,11 +174,11 @@ class ChatResponsePipeline:
         current_best = initial_response
         for _ in range(self.max_attempts - 1):
             try:
-                feedback, score = self.get_feedback(context, current_best)
+                feedback, score = self.get_feedback(context, current_best, personalization=personalization)
                 # If already highly rated or critique says None, keep current best
                 if "Critique Summary: None" in feedback or score >= 9:
                     break
-                refined = self.refine(context, current_best, feedback)
+                refined = self.refine(context, current_best, feedback, personalization=personalization)
                 if refined and len(refined) > 5:
                     current_best = refined
             except Exception:

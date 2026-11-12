@@ -1,9 +1,16 @@
 import io
 import contextlib
+import json
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from src.chat_pipeline import ChatResponsePipeline, parse_chat_feedback
+from src.chat_pipeline import (
+    ChatResponsePipeline,
+    load_personalization_instruction,
+    parse_chat_feedback,
+)
 from prompt_lib.backends.huggingface_api import InferenceError
 
 
@@ -164,6 +171,116 @@ class ChatPipelineTests(unittest.TestCase):
 
         self.assertEqual(resp, "Refined Draft")
         self.assertEqual(calls, ["generation", "feedback", "refinement"])
+
+    def test_load_personalization_instruction_enabled_and_disabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "user_profile.json"
+
+            # 1. Profile with enabled and disabled preferences
+            profile_data = {
+                "preferences": {
+                    "prefers_step_by_step": {
+                        "description": "Prefers step-by-step explanations",
+                        "enabled": True,
+                    },
+                    "prefers_concise_answers": {
+                        "description": "Prefers short, concise answers",
+                        "enabled": False,
+                    },
+                    "prefers_examples": {
+                        "description": "Prefers practical examples and demonstrations",
+                        "enabled": True,
+                    },
+                }
+            }
+            profile_path.write_text(json.dumps(profile_data), encoding="utf-8")
+
+            instruction = load_personalization_instruction(profile_path)
+            self.assertIsNotNone(instruction)
+            self.assertIn("Prefers step-by-step explanations", instruction)
+            self.assertIn("Prefers practical examples and demonstrations", instruction)
+            self.assertNotIn("Prefers short, concise answers", instruction)
+
+    def test_load_personalization_instruction_missing_and_invalid(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            missing_path = Path(tmpdir) / "non_existent.json"
+            self.assertIsNone(load_personalization_instruction(missing_path))
+
+            invalid_path = Path(tmpdir) / "invalid.json"
+            invalid_path.write_text("{ corrupt json ...", encoding="utf-8")
+            self.assertIsNone(load_personalization_instruction(invalid_path))
+
+            empty_path = Path(tmpdir) / "empty.json"
+            empty_path.write_text(json.dumps({"preferences": {}}), encoding="utf-8")
+            self.assertIsNone(load_personalization_instruction(empty_path))
+
+    def test_standard_mode_with_personalization_instruction(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "user_profile.json"
+            profile_data = {
+                "preferences": {
+                    "prefers_step_by_step": {
+                        "description": "Prefers step-by-step explanations",
+                        "enabled": True,
+                    }
+                }
+            }
+            profile_path.write_text(json.dumps(profile_data), encoding="utf-8")
+
+            pipeline = ChatResponsePipeline(engine="groq:qwen/qwen3.8-27b", max_attempts=1, profile_path=profile_path)
+            captured_prompts = []
+
+            def fake_call(prompt, stage, **kwargs):
+                captured_prompts.append((prompt, stage))
+                return "Personalized answer"
+
+            with patch.object(pipeline, "_call_model", side_effect=fake_call):
+                resp = pipeline.generate_chat_response("User: Solve x^2 = 4", mode="standard")
+
+            self.assertEqual(resp, "Personalized answer")
+            self.assertEqual(len(captured_prompts), 1)
+            self.assertEqual(captured_prompts[0][1], "generation")
+            self.assertIn("Prefers step-by-step explanations", captured_prompts[0][0])
+
+    def test_self_refine_mode_with_personalization_instruction(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            profile_path = Path(tmpdir) / "user_profile.json"
+            profile_data = {
+                "preferences": {
+                    "prefers_simple_code": {
+                        "description": "Prefers simple and clean code implementations",
+                        "enabled": True,
+                    }
+                }
+            }
+            profile_path.write_text(json.dumps(profile_data), encoding="utf-8")
+
+            pipeline = ChatResponsePipeline(engine="groq:qwen/qwen3.8-27b", max_attempts=2, profile_path=profile_path)
+            captured_calls = []
+
+            def fake_call(prompt, stage, **kwargs):
+                captured_calls.append((prompt, stage))
+                if stage == "generation":
+                    return "Draft code"
+                elif stage == "feedback":
+                    return "Critique Summary: Simplify code.\nTotal score: 6/10"
+                elif stage == "refinement":
+                    return "Refined simple code"
+                return ""
+
+            with patch.object(pipeline, "_call_model", side_effect=fake_call):
+                resp = pipeline.generate_chat_response("User: How to sort a list?", mode="self_refine")
+
+            self.assertEqual(resp, "Refined simple code")
+            self.assertEqual(len(captured_calls), 3)
+
+            # 1. Generation contains personalization
+            self.assertIn("Prefers simple and clean code implementations", captured_calls[0][0])
+            # 2. Feedback prompt contains personalization criteria
+            self.assertIn("Adherence to user preferences", captured_calls[1][0])
+            self.assertIn("Prefers simple and clean code implementations", captured_calls[1][0])
+            # 3. Refinement prompt contains personalization context
+            self.assertIn("Prefers simple and clean code implementations", captured_calls[2][0])
 
 
 if __name__ == "__main__":
