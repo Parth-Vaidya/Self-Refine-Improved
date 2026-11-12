@@ -98,7 +98,17 @@ class HostedChatAPIWrapper:
                 try:
                     if cls.label == "Groq" and status == 429 and attempt < retries:
                         from prompt_lib.backends.groq_pacing import retry_delay
-                        retry_after = retry_delay(response.headers.get("Retry-After"), status)
+                        header_val = response.headers.get("Retry-After")
+                        if not header_val:
+                            try:
+                                err_msg = response.json().get("error", {}).get("message", "")
+                                import re
+                                m = re.search(r"try again in ([\d\.]+)s", err_msg, re.IGNORECASE)
+                                if m:
+                                    header_val = m.group(1)
+                            except Exception:
+                                pass
+                        retry_after = retry_delay(header_val, status)
                     elif cls.label != "Groq":
                         retry_after = min(60, max(0, float(response.headers.get("Retry-After", 0))))
                 except InferenceError:
@@ -123,7 +133,12 @@ class HostedChatAPIWrapper:
                 raise InferenceError(message, status_code=status, attempts=attempt + 1) from None
             if cls.label == "Groq":
                 from prompt_lib.backends.groq_pacing import wait
-                wait(max(retry_after, 1))
+                wait(
+                    retry_after,
+                    reason=f"Rate limit exceeded (HTTP {status})" if status else "Request retry",
+                    attempt=attempt + 1,
+                    max_retries=retries,
+                )
             else:
                 time.sleep(max(retry_after, min(2 ** attempt, 30)))
 

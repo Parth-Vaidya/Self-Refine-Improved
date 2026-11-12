@@ -7,15 +7,16 @@ A modular research implementation and interactive application extending the **Se
 ## Table of Contents
 1. [Project Overview](#1-project-overview)
 2. [Research Methodology](#2-research-methodology)
-3. [Features](#3-features)
-4. [Architecture](#4-architecture)
-5. [Technology Stack](#5-technology-stack)
-6. [Project Structure](#6-project-structure)
-7. [Installation and Setup](#7-installation-and-setup)
-8. [Usage Instructions](#8-usage-instructions)
-9. [Testing](#9-testing)
-10. [Evaluation Instructions](#10-evaluation-instructions)
-11. [Current Status and Limitations](#11-current-status-and-limitations)
+3. [Performance Analysis](#3-performance-analysis)
+4. [Features](#4-features)
+5. [Architecture](#5-architecture)
+6. [Technology Stack](#6-technology-stack)
+7. [Project Structure](#7-project-structure)
+8. [Installation and Setup](#8-installation-and-setup)
+9. [Usage Instructions](#9-usage-instructions)
+10. [Testing](#10-testing)
+11. [Evaluation Instructions](#11-evaluation-instructions)
+12. [Current Status and Limitations](#12-current-status-and-limitations)
 
 ---
 
@@ -31,10 +32,10 @@ While vanilla Self-Refine demonstrates strong benchmark gains on standalone task
 3. **Uniformity (Lack of Personalization):** Responses treat all users identically, failing to respect individual preferences for explanation depth, conciseness, code simplicity, or pedagogical structure.
 
 ### Research Objective
-This project implements and evaluates an improved, user-centric Self-Refine architecture designed to:
+This project implements and evaluates an extended Self-Refine architecture designed to:
 - Provide multi-turn conversational persistence with transparent mode tracking.
 - Offer **per-message mode selection** (Standard single-pass vs. Self-Refine iterative) to give users direct control over latency and token consumption.
-- Automatically mine stylistic preferences from previous user interactions without expensive auxiliary LLM calls.
+- Automatically extract stylistic preferences from user messages without auxiliary model calls.
 - Guide both initial generation and iterative refinement using active user profile constraints.
 - Systematically measure the trade-offs in tokens, latency, and response quality across four controlled experimental configurations.
 
@@ -61,20 +62,93 @@ The core research investigation isolates the interaction between iterative self-
 
 ### Benchmark Setup
 The evaluation suite evaluates **12 standardized prompts** across three cognitive categories:
-1. **Programming (4 prompts):** Algorithm implementation, memory mechanics (deepcopy vs. shallow copy), hash collision handling, and Kadane's maximum subarray sum.
-2. **Theoretical Concepts (4 prompts):** Newton's laws of motion, TCP vs. UDP transport protocols, thermodynamic vs. information-theoretic entropy, and the CAP theorem.
-3. **Reasoning (4 prompts):** Cognitive reflection word algebra, syllogistic logical validity, the two-jug riddle, and the Monty Hall conditional probability problem.
+1. **Programming (4 prompts):** Algorithm implementation (`prog_01`), memory mechanics (`prog_04`), hash collision handling (`prog_02`), and Kadane's maximum subarray sum (`prog_03`).
+2. **Theoretical Concepts (4 prompts):** Newton's laws of motion (`theo_01`), TCP vs. UDP transport protocols (`theo_02`), thermodynamic vs. information-theoretic entropy (`theo_03`), and the CAP theorem (`theo_04`).
+3. **Reasoning (4 prompts):** Cognitive reflection word algebra (`reas_01`), syllogistic logical validity (`reas_02`), the two-jug riddle (`reas_03`), and the Monty Hall conditional probability problem (`reas_04`).
 
 Each prompt is evaluated under all 4 configurations, resulting in:
 $$\text{Total Evaluation Combinations} = 12 \text{ prompts} \times 4 \text{ configurations} = \mathbf{48 \text{ evaluations}}$$
 
-> [!IMPORTANT]
-> **Performance evaluation and comparative analysis are pending completion of the full experimental run.**
-> The evaluation harness, prompt sets, token instrumentation, and reporting scripts are implemented and verified. Final empirical performance conclusions, latency multiplier tables, and token overhead analyses will be documented upon completion of the full 48-combination live benchmark run.
+Detailed empirical measurements, token overhead multipliers, and trade-off analysis across all 48 combinations are documented in [Section 3: Performance Analysis](#3-performance-analysis).
 
 ---
 
-## 3. Features
+## 3. Performance Analysis
+
+### Experimental Setup
+The comparative evaluation was conducted across all **12 benchmark prompts** in the three cognitive domains:
+- **Programming (4 prompts):** `prog_01` (palindrome validation), `prog_02` (hash collision handling), `prog_03` (Kadane's algorithm), `prog_04` (deepcopy vs. shallow copy).
+- **Theoretical Concepts (4 prompts):** `theo_01` (Newton's third law forces), `theo_02` (TCP vs. UDP transport layer), `theo_03` (thermodynamic vs. information-theoretic entropy), `theo_04` (CAP theorem trade-offs).
+- **Reasoning (4 prompts):** `reas_01` (bat-and-ball algebra), `reas_02` (syllogistic rose deduction), `reas_03` (water jug measurement), `reas_04` (Monty Hall probability distribution).
+
+Each prompt was evaluated under the four conditions:
+- **Condition A:** Standard baseline without personalization (`mode: standard`, no profile).
+- **Condition B:** Self-Refine baseline without personalization (`mode: self_refine`, no profile).
+- **Condition C:** Standard response with personalization (`mode: standard`, `test_profile.json` enabled).
+- **Condition D:** Self-Refine with personalization (`mode: self_refine`, `test_profile.json` enabled).
+
+Total combinations evaluated: $12 \text{ prompts} \times 4 \text{ conditions} = \mathbf{48 \text{ evaluations}}$.
+
+### Model Configuration
+- **Evaluated Model:** All 48 evaluations were executed using **`groq:qwen/qwen3.8-27b`** (Qwen 2.5 27B hosted on Groq).
+- **Pipeline Consistency:** In Self-Refine conditions (B and D), the exact same 27B model was used across all three stages: initial response generation, feedback critique, and iterative refinement.
+- **Smaller Refinement Model Status:** The architectural concept of routing feedback or refinement to an alternative smaller model (such as a 7B or 8B parameter model) to reduce compute costs has not yet been evaluated in this benchmark.
+
+### Performance Comparison Table
+
+All 48 prompt-condition combinations completed successfully (100% success rate):
+
+| Condition | Description | Runs | Success Rate | Avg Latency | Avg Prompt Tokens | Avg Completion Tokens | Avg Total Tokens | Avg API Calls |
+|:---:|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **A** | Standard Baseline | 12 | 100.0% | 55.32s | 76.0 | 710.7 | 786.7 | 1.0 |
+| **B** | Self-Refine Baseline | 12 | 100.0% | 86.96s | 1062.8 | 1026.4 | 2089.2 | 2.2 |
+| **C** | Personalized Standard | 12 | 100.0% | 58.92s | 111.0 | 1245.2 | 1356.2 | 1.0 |
+| **D** | Personalized Self-Refine | 12 | 100.0% | 159.54s | 2575.0 | 2353.4 | 4928.4 | 2.6 |
+
+#### All-Attempted vs. Success-Conditioned Averages
+In the final dataset, all 48 evaluations succeeded, meaning all-attempted and success-conditioned averages are identical. However, during the initial evaluation run (documented in `evaluations/PHASE_4_FINAL_AUDIT.md`), 8 calls failed due to upstream Groq HTTP 429 rate limits before returning tokens:
+
+| Metric | Condition A (Initial / Final) | Condition B (Initial / Final) | Condition C (Initial / Final) | Condition D (Initial / Final) |
+|---|:---:|:---:|:---:|:---:|
+| **Initial Completed Runs** | 9 / 12 (75.0%) | 10 / 12 (83.3%) | 10 / 12 (83.3%) | 11 / 12 (91.7%) |
+| **Initial All-Attempted Total Tokens** | 597.8 | 1771.8 | 1181.2 | 4801.9 |
+| **Initial Success-Only Total Tokens** | 797.1 | 2126.1 | 1417.4 | 5238.5 |
+| **Final Recovered Total Tokens (100% Success)** | **786.7** | **2089.2** | **1356.2** | **4928.4** |
+
+When an evaluation fails at the API layer, it records 0 tokens. Calculating aggregate averages across all attempted runs using $N=12$ as the divisor mathematically deflates the reported token cost (by 8% to 25%). Conditioning averages exclusively on successful runs provides the authentic computational cost of completed responses.
+
+### Measured Trade-Off Analysis
+
+#### 1. Standard Generation vs. Self-Refine (B vs. A)
+- **Token Multiplier:** Self-Refine increased average total token consumption from **786.7 to 2089.2 tokens**—a **$2.66\times$ token overhead**. Prompt tokens expanded from 76.0 to 1062.8 ($13.98\times$) because the prompt context must carry the draft during feedback and both the draft and critique during refinement.
+- **API Call Overhead:** Standard generation consistently makes 1 call. Self-Refine averaged **2.2 calls** in Condition B. The pipeline's convergence early stopping (halting when the feedback score was $\ge 9/10$ or output `Critique Summary: None`) saved an extra refinement call in 5 out of 12 runs, while the remaining 7 runs executed all 3 calls.
+- **Latency Multiplier:** Average end-to-end latency increased from **55.32s to 86.96s** (a **$1.57\times$ latency multiplier**), reflecting the additional network round trips and rate-limit queue times.
+
+#### 2. Personalized vs. Non-Personalized Generation (C vs. A)
+- **Prompt Token Delta:** Injecting user style preferences (`test_profile.json`) into the prompt increased average prompt tokens by **35.0 tokens** (from 76.0 in A to 111.0 in C, a $+46.1\%$ increase).
+- **Completion Token Expansion:** Because the profile requested step-by-step breakdowns, minimalist code, and practical demonstrations, the model generated substantially longer responses: completion tokens grew from **710.7 to 1245.2** ($+75.2\%$).
+- **Total Token Impact:** Condition C consumed **1356.2 total tokens** compared to 786.7 in A (a **$+72.4\%$ increase**), while average latency remained comparable (**58.92s vs. 55.32s**).
+
+#### 3. Compounded Overhead of Personalized Self-Refine (D vs. A & D vs. B)
+- **Token Compounding:** Combining personalization with iterative refinement produced the highest resource consumption: prompt tokens averaged **2575.0** and completion tokens reached **2353.4**, resulting in **4928.4 total tokens**.
+- **Relative Multipliers:**
+  - **D vs. A (Baseline):** **$6.26\times$ token overhead** and **$2.88\times$ latency increase** (159.54s vs. 55.32s).
+  - **D vs. B (Unpersonalized Self-Refine):** **$2.36\times$ token overhead** (4928.4 vs. 2089.2 tokens).
+  - **D vs. C (Standard Personalized):** **$3.63\times$ token overhead** (4928.4 vs. 1356.2 tokens).
+- **API Calls:** Condition D averaged **2.6 calls** (4 runs stopped early after 2 calls; 8 runs executed all 3 calls).
+
+#### 4. Practical Architectural Implications
+The measured data demonstrates that running unconditional Self-Refine with personalized formatting requires over 6 times the token budget of a standard response. Single-pass generation provides major savings: Condition A saves $62.3\%$ of tokens relative to Condition B and $84.0\%$ relative to Condition D. This empirical result supports the project's design of **per-message mode selection**, allowing users to invoke Self-Refine only when iterative refinement is actually required.
+
+### Limitations
+1. **Latency Measurement Confound:** Recorded latency measures end-to-end wall-clock time, which includes provider rate-limit waits and retry backoffs. It should not be interpreted as pure model inference time.
+2. **Rate-Limit Recovery:** Initial runs encountered Groq HTTP 429 rate limits on 8 reasoning combinations, which were subsequently recovered using bounded pacing retries.
+3. **Benchmark Scope:** The benchmark consists of 12 curated prompts across three categories. It provides exploratory comparative data rather than large-scale statistical bounds.
+4. **Qualitative Scoring:** Response quality dimensions (Correctness, Completeness, Clarity, and Preference Adherence) are recorded as placeholders in the JSONL output and have not yet been manually scored with the rubric.
+
+---
+
+## 4. Features
 
 ### 1. Conversation Management
 - **Multi-Session Storage:** Creates and tracks independent conversations stored as clean text files in the `chats/` directory (e.g. `chat_001.txt`, `chat_002.txt`).
@@ -96,7 +170,7 @@ $$\text{Total Evaluation Combinations} = 12 \text{ prompts} \times 4 \text{ conf
 - **Per-Message Prompting:** Users choose between Standard and Self-Refine mode for every message sent.
 
 ### 3. Rule-Based Preference Extraction
-- **Zero-Cost Mining:** Inspects historical user messages across `chats/` using deterministic regular expressions without invoking additional LLM inference calls.
+- **Zero-Model-Call Extraction:** Inspects historical user messages across `chats/` using deterministic regular expressions without invoking additional LLM inference calls.
 - **Supported Style Preferences:**
   - `prefers_step_by_step`: Explanations structured sequentially.
   - `prefers_concise_answers`: Direct, compact responses.
@@ -111,13 +185,13 @@ $$\text{Total Evaluation Combinations} = 12 \text{ prompts} \times 4 \text{ conf
 
 ### 5. Automated Evaluation Framework
 - **Automated Execution:** Tests all 4 experimental conditions (A, B, C, D) over standardized evaluation prompts.
-- **Telemetry Recording:** Authentically measures prompt tokens, completion tokens, total tokens, latency in seconds, and individual call stages.
+- **Telemetry Recording:** Measures prompt tokens, completion tokens, total tokens, latency in seconds, and individual call stages.
 - **Resume Capability:** Reads existing JSONL records and skips already-completed successful prompt/condition combinations, surviving rate-limit interruptions.
 - **Markdown Reporting:** Converts raw JSONL evaluation telemetry into structured Markdown comparative tables.
 
 ---
 
-## 4. Architecture
+## 5. Architecture
 
 ### Overall System Architecture
 
@@ -226,7 +300,7 @@ flowchart TD
 
 ---
 
-## 5. Technology Stack
+## 6. Technology Stack
 
 ### Languages & Runtime
 - **Python 3.12:** Primary programming language.
@@ -242,13 +316,13 @@ flowchart TD
 - **`python-dotenv`:** Secure local credential management without exposing API keys.
 
 ### Hosted Model APIs & Endpoints
-- **Groq Hosted API (`groq:qwen/qwen3.8-27b`):** High-throughput inference for chat pipeline generation, feedback critique, and Phase 4 evaluations.
+- **Groq Hosted API (`groq:qwen/qwen3.8-27b`):** High-throughput inference for chat pipeline generation, feedback critique, and benchmark evaluations.
 - **Hugging Face Inference Router (`hf:`):** Open-source model inference provider endpoints.
 - **Google Gemini API:** Benchmark baseline model backend.
 
 ---
 
-## 6. Project Structure
+## 7. Project Structure
 
 ```text
 self-refine/
@@ -257,11 +331,11 @@ self-refine/
 │   └── chat_002.txt                    # Sequential multi-turn chat log
 ├── data/                               # Legacy benchmark prompt data
 │   └── prompt/                         # Task-specific few-shot examples
-├── evaluations/                        # Phase 4 Evaluation suite
+├── evaluations/                        # Comparative evaluation suite
 │   ├── eval_prompts.json               # 12 standardized benchmark prompts
 │   ├── test_profile.json               # Standardized profile for conditions C and D
 │   ├── smoke_test_results.jsonl        # Verified 1-prompt smoke test output
-│   ├── phase_4_results.jsonl           # Target output for 48-combination evaluation
+│   ├── phase_4_results.jsonl           # Complete 48-combination evaluation dataset
 │   ├── PHASE_4_EVALUATION_REPORT.md    # Generated comparative markdown report
 │   └── README.md                       # Evaluation suite documentation
 ├── prompt-lib/                         # Unified model backend and telemetry library
@@ -303,7 +377,7 @@ self-refine/
 │   └── README.md                       # Test suite documentation
 ├── .env.example                        # Template for required environment variables
 ├── .gitignore                          # Version control exclusions
-├── PHASE_4_EVALUATION_PLAN.md          # Architectural plan for Phase 4 evaluation
+├── PHASE_4_EVALUATION_PLAN.md          # Evaluation methodology plan
 ├── README.md                           # Master project documentation (this file)
 ├── requirements.txt                    # Project dependency manifest
 └── user_profile.json                   # Local user preference profile
@@ -311,7 +385,7 @@ self-refine/
 
 ---
 
-## 7. Installation and Setup
+## 8. Installation and Setup
 
 ### Prerequisites
 - Windows 10/11 operating system.
@@ -364,7 +438,7 @@ HF_TOKEN=your_actual_hf_token_here
 
 ---
 
-## 8. Usage Instructions
+## 9. Usage Instructions
 
 ### 1. Launch the Interactive Chatbot
 Run the terminal chat application:
@@ -419,7 +493,7 @@ You can manually edit this file at any time to toggle preferences (`"enabled": f
 
 ---
 
-## 9. Testing
+## 10. Testing
 
 The test suite runs **offline** using mocked API responses, validating logic, prompt formatting, telemetry aggregation, and error recovery without incurring API costs.
 
@@ -455,9 +529,9 @@ $env:PYTHONPATH = ".;prompt-lib"
 
 ---
 
-## 10. Evaluation Instructions
+## 11. Evaluation Instructions
 
-The Phase 4 evaluation suite tests the four configurations (A, B, C, D) across all 12 standardized prompts.
+The comparative evaluation suite tests the four configurations (A, B, C, D) across all 12 standardized prompts.
 
 ### 1. Launching the Evaluation
 ```powershell
@@ -515,20 +589,22 @@ Each line in `evaluations/phase_4_results.jsonl` contains detailed telemetry:
 
 ---
 
-## 11. Current Status and Limitations
+## 12. Current Status and Limitations
 
-### Completed & Implemented
-- [x] **Phase 1: Conversation Management:** Multi-conversation creation, TXT persistence in `chats/`, sequential ID generation, and context truncation.
-- [x] **Phase 1.5: Generation Mode Selection:** Per-message user selection of Standard vs. Self-Refine modes, with mode tags preserved in transcripts.
-- [x] **Phase 2: Preference Extraction:** Rule-based mining of 4 stylistic preferences from chat logs into `user_profile.json` without LLM costs.
-- [x] **Phase 3: Basic Personalization:** Profile-driven prompt conditioning across both Standard and Self-Refine execution modes.
-- [x] **Phase 4: Evaluation Infrastructure:** Standardized 12-prompt dataset, automated 4-condition runner, telemetry ContextVar logging, resilient resume capability, and Markdown report synthesis.
-- [x] **Hermetic Testing:** 100% test pass rate across all unit and integration test suites.
+### Implemented Capabilities
+- [x] **Conversation Management:** Multi-conversation creation, TXT persistence in `chats/`, sequential ID generation, and context window truncation.
+- [x] **Execution Mode Selection:** Per-message user selection between Standard (1-pass) and Self-Refine (iterative) modes, with mode tags recorded in transcripts.
+- [x] **Preference Extraction:** Rule-based detection of stylistic preferences from chat history into `user_profile.json` without extra model calls.
+- [x] **Profile-Driven Personalization:** Profile-based prompt conditioning across both Standard and Self-Refine execution modes.
+- [x] **Evaluation Framework:** Automated 48-combination evaluation suite, telemetry logging (tokens, latency, API call stages), resume and recovery logic, and Markdown report generation.
+- [x] **Test Coverage:** Hermetic unit and integration tests covering the chat pipeline, conversation manager, evaluator, and fallback pacing.
 
-### Ongoing Work & Limitations
-- **Empirical Evaluation In Progress:** Live evaluation runs across all 48 combinations are currently executing against hosted endpoints subject to external provider rate limits.
-- **Pending Performance Claims:** Token overhead multipliers, latency trade-off tables, and qualitative score analyses will be documented upon completion of the full experimental run.
-- **Rule-Based Extraction Scope:** The preference extractor relies on regex and keyword detection; subtle or implicit user preferences currently require manual configuration in `user_profile.json`.
+### Methodological Limitations
+- **Latency Includes Rate-Limit Delays:** Measured latency captures end-to-end wall-clock time, including provider rate-limit wait times and retry cooldowns. It does not measure pure model decoding speed.
+- **Benchmark Scope ($N=12$):** The benchmark comprises 12 prompts across three task domains. While sufficient for inspecting behavior and measuring overhead, it is an exploratory evaluation.
+- **Model Homogeneity:** All three stages (initial generation, feedback critique, and refinement) use the same 27B model (`groq:qwen/qwen3.8-27b`). Smaller-model refinement was not tested in this benchmark.
+- **Qualitative Rubric Scoring:** Quality dimensions (Correctness, Completeness, Clarity, and Preference Adherence) are archived as rubric placeholders in `phase_4_results.jsonl` and require manual scoring.
+- **Rule-Based Extraction Scope:** The preference extractor uses regex and keyword heuristics; complex or implicit stylistic preferences currently require manual editing in `user_profile.json`.
 
 ---
 

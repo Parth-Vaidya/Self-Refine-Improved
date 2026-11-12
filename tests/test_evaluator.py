@@ -186,6 +186,42 @@ class Phase4EvaluatorTests(unittest.TestCase):
             self.assertEqual(pairs, [("p1", "A"), ("p1", "B"), ("p2", "A"), ("p2", "B")])
             self.assertEqual(len(all_results), 4)
 
+    def test_run_evaluations_filter_by_prompt_ids(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompts_path = Path(tmpdir) / "prompts.json"
+            profile_path = Path(tmpdir) / "profile.json"
+            output_jsonl = Path(tmpdir) / "output.jsonl"
+
+            prompts_path.write_text(
+                json.dumps([
+                    {"id": "p1", "category": "Programming", "query": "Q1"},
+                    {"id": "p2", "category": "Programming", "query": "Q2"},
+                    {"id": "p3", "category": "Reasoning", "query": "Q3"},
+                ]),
+                encoding="utf-8",
+            )
+            profile_path.write_text(json.dumps({"preferences": {}}), encoding="utf-8")
+
+            mock_output = {
+                "model": "groq:qwen/qwen3.8-27b",
+                "choices": [{"message": {"content": "Sample output"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            }
+
+            with patch("prompt_lib.backends.groq_api.GroqAPIWrapper.call", return_value=mock_output) as mock_call:
+                results = run_evaluations(
+                    prompts_path=prompts_path,
+                    profile_path=profile_path,
+                    output_path=output_jsonl,
+                    conditions=["A"],
+                    prompt_ids=["p2"],
+                    resume=False,
+                )
+                self.assertEqual(len(results), 1)
+                self.assertEqual(results[0]["prompt_id"], "p2")
+                self.assertEqual(results[0]["condition_key"], "A")
+                self.assertEqual(mock_call.call_count, 1)
+
     def test_generate_evaluation_report_from_mock_results(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             results_jsonl = Path(tmpdir) / "results.jsonl"
@@ -219,6 +255,83 @@ class Phase4EvaluatorTests(unittest.TestCase):
             self.assertIn("Latency Multiplier", report_text)
             self.assertIn("150.0", report_text)
             self.assertIn("450.0", report_text)
+
+    def test_run_evaluations_resume_cleans_prior_failed_records_and_replaces_them(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompts_path = Path(tmpdir) / "prompts.json"
+            prompts_path.write_text(
+                json.dumps([
+                    {"id": "p1", "category": "Programming", "query": "Q1"},
+                    {"id": "p2", "category": "Programming", "query": "Q2"},
+                ]),
+                encoding="utf-8",
+            )
+            profile_path = Path(tmpdir) / "profile.json"
+            profile_path.write_text(json.dumps({"preferences": {}}), encoding="utf-8")
+            output_jsonl = Path(tmpdir) / "output.jsonl"
+
+            # Pre-populate with 1 success (p1/A) and 1 error (p2/A)
+            initial_records = [
+                {"prompt_id": "p1", "condition_key": "A", "status": "success", "response": "OK", "telemetry": {}},
+                {"prompt_id": "p2", "condition_key": "A", "status": "error", "error": "Rate limit", "telemetry": {}},
+            ]
+            with output_jsonl.open("w", encoding="utf-8") as f:
+                for r in initial_records:
+                    f.write(json.dumps(r) + "\n")
+
+            mock_output = {
+                "model": "groq:qwen/qwen3.8-27b",
+                "choices": [{"message": {"content": "Recovered response"}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            }
+
+            with patch("prompt_lib.backends.groq_api.GroqAPIWrapper.call", return_value=mock_output) as mock_call:
+                results = run_evaluations(
+                    prompts_path=prompts_path,
+                    profile_path=profile_path,
+                    output_path=output_jsonl,
+                    conditions=["A"],
+                    resume=True,
+                )
+
+            # p1/A was already success, so it was preserved.
+            # p2/A had failed previously, so it was pruned and re-evaluated successfully.
+            # Total records should be exactly 2, zero errors, zero duplicates.
+            lines = [json.loads(l) for l in output_jsonl.read_text(encoding="utf-8").splitlines() if l.strip()]
+            self.assertEqual(len(lines), 2)
+            self.assertEqual(lines[0]["prompt_id"], "p1")
+            self.assertEqual(lines[0]["status"], "success")
+            self.assertEqual(lines[1]["prompt_id"], "p2")
+            self.assertEqual(lines[1]["status"], "success")
+            self.assertEqual(lines[1]["response"], "Recovered response")
+            self.assertEqual(mock_call.call_count, 1)
+
+    def test_run_evaluations_stop_on_error_halts_safely(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            prompts_path = Path(tmpdir) / "prompts.json"
+            prompts_path.write_text(
+                json.dumps([{"id": "p1", "category": "Programming", "query": "Q1"}]),
+                encoding="utf-8",
+            )
+            profile_path = Path(tmpdir) / "profile.json"
+            profile_path.write_text(json.dumps({"preferences": {}}), encoding="utf-8")
+            output_jsonl = Path(tmpdir) / "output.jsonl"
+
+            with patch("prompt_lib.backends.groq_api.GroqAPIWrapper.call", side_effect=Exception("API failure")):
+                with self.assertRaises(SystemExit):
+                    run_evaluations(
+                        prompts_path=prompts_path,
+                        profile_path=profile_path,
+                        output_path=output_jsonl,
+                        conditions=["A"],
+                        resume=True,
+                        stop_on_error=True,
+                    )
+
+            # Output file should not contain the failed record
+            if output_jsonl.exists():
+                lines = [json.loads(l) for l in output_jsonl.read_text(encoding="utf-8").splitlines() if l.strip()]
+                self.assertEqual(len(lines), 0)
 
 
 if __name__ == "__main__":
