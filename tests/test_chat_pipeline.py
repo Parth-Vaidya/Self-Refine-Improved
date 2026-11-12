@@ -130,6 +130,41 @@ class ChatPipelineTests(unittest.TestCase):
         self.assertIsNone(mock_call2.call_args.kwargs["stop_token"])
         self.assertEqual(mock_call2.call_args.kwargs["stage"], "refinement")
 
+    def test_standard_mode_performs_only_initial_generation(self):
+        pipeline = ChatResponsePipeline(engine="groq:qwen/qwen3.8-27b", max_attempts=3)
+        calls = []
+
+        def fake_call(prompt, stage, **kwargs):
+            calls.append(stage)
+            return "Standard response"
+
+        with patch.object(pipeline, "_call_model", side_effect=fake_call):
+            resp = pipeline.generate_chat_response("User: Quick question", mode="standard")
+
+        self.assertEqual(resp, "Standard response")
+        # Ensure ONLY 'generation' was invoked; never 'feedback' or 'refinement'
+        self.assertEqual(calls, ["generation"])
+
+    def test_self_refine_mode_invokes_complete_pipeline(self):
+        pipeline = ChatResponsePipeline(engine="groq:qwen/qwen3.8-27b", max_attempts=2)
+        calls = []
+
+        def fake_call(prompt, stage, **kwargs):
+            calls.append(stage)
+            if stage == "generation":
+                return "Draft"
+            elif stage == "feedback":
+                return "Critique\nTotal score: 5/10"
+            elif stage == "refinement":
+                return "Refined Draft"
+            return "Unknown"
+
+        with patch.object(pipeline, "_call_model", side_effect=fake_call):
+            resp = pipeline.generate_chat_response("User: Complex question", mode="self_refine")
+
+        self.assertEqual(resp, "Refined Draft")
+        self.assertEqual(calls, ["generation", "feedback", "refinement"])
+
 
 if __name__ == "__main__":
     unittest.main()

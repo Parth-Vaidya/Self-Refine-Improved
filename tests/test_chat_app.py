@@ -52,7 +52,9 @@ class ChatAppTests(unittest.TestCase):
                 "1",  # Start a New Chat
                 "",  # Blank title -> auto-generate from first query
                 "What is self-refine?",
+                "1",  # Mode: Standard
                 "Tell me more.",
+                "2",  # Mode: Self-Refine
                 "menu",  # Return to main menu
                 "3",  # Exit
             ]
@@ -68,8 +70,10 @@ class ChatAppTests(unittest.TestCase):
             loaded = manager.load_conversation(convs[0]["id"])
             self.assertEqual(len(loaded["messages"]), 4)
             self.assertEqual(loaded["messages"][0]["content"], "What is self-refine?")
+            self.assertEqual(loaded["messages"][0].get("mode"), "standard")
             self.assertEqual(loaded["messages"][1]["content"], "Mock reply #1")
             self.assertEqual(loaded["messages"][2]["content"], "Tell me more.")
+            self.assertEqual(loaded["messages"][2].get("mode"), "self_refine")
             self.assertEqual(loaded["messages"][3]["content"], "Mock reply #2")
 
             # Second turn must include the first turn in LLM context.
@@ -81,41 +85,46 @@ class ChatAppTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             # First session creates a conversation and saves a turn.
             manager1 = ConversationManager(tmpdir)
-            app1 = ChatApp(manager=manager1, response_fn=lambda ctx: "Initial answer")
-            with patch("builtins.input", side_effect=["1", "Orbital Physics", "Hello", "menu", "3"]), \
+            app1 = ChatApp(manager=manager1, response_fn=lambda ctx, **k: "Initial answer")
+            with patch("builtins.input", side_effect=["1", "Orbital Physics", "Hello", "1", "menu", "3"]), \
                  contextlib.redirect_stdout(io.StringIO()):
                 app1.run()
 
             # Second session ("restart") continues the existing conversation.
             manager2 = ConversationManager(tmpdir)
             captured_contexts = []
+            captured_modes = []
 
-            def fake_llm_after_restart(context: str) -> str:
+            def fake_llm_after_restart(context: str, mode: str = "standard") -> str:
                 captured_contexts.append(context)
+                captured_modes.append(mode)
                 return "Follow-up answer"
 
             app2 = ChatApp(manager=manager2, response_fn=fake_llm_after_restart)
             out = io.StringIO()
-            with patch("builtins.input", side_effect=["2", "1", "Follow-up question", "quit"]), \
+            with patch("builtins.input", side_effect=["2", "1", "Follow-up question", "2", "quit"]), \
                  contextlib.redirect_stdout(out):
                 app2.run()
 
             self.assertEqual(len(captured_contexts), 1)
+            self.assertEqual(captured_modes[0], "self_refine")
             self.assertIn("User: Hello", captured_contexts[0])
             self.assertIn("Assistant: Initial answer", captured_contexts[0])
             self.assertIn("User: Follow-up question", captured_contexts[0])
 
             loaded = manager2.load_conversation("chat_001")
             self.assertEqual(len(loaded["messages"]), 4)
+            self.assertEqual(loaded["messages"][0].get("mode"), "standard")
+            self.assertEqual(loaded["messages"][2].get("mode"), "self_refine")
             self.assertEqual(loaded["messages"][3]["content"], "Follow-up answer")
             self.assertIn("Orbital Physics", out.getvalue())
 
     def test_default_generate_response_calls_chat_pipeline(self):
         with patch("src.chat_app.ChatResponsePipeline.generate_chat_response", return_value="Refined response") as mock_gen:
-            reply = default_generate_response("User: Hi")
+            reply = default_generate_response("User: Hi", mode="self_refine")
 
         self.assertEqual(reply, "Refined response")
-        mock_gen.assert_called_once_with("User: Hi")
+        mock_gen.assert_called_once_with("User: Hi", mode="self_refine")
 
     def test_rate_limit_error_handling_and_conversation_persistence(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -130,6 +139,7 @@ class ChatAppTests(unittest.TestCase):
                 "1",
                 "Rate Limit Test",
                 "Hello when busy",
+                "2",  # mode choice
                 "menu",
                 "3",
             ]
