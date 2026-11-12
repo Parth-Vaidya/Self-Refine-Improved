@@ -45,6 +45,7 @@ The existing workspace already has dependencies installed. For a new environment
 ```powershell
 py -3.12 -m venv .venv-research
 .\.venv-research\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv-research\Scripts\python.exe -m spacy download en_core_web_sm
 ```
 
 The local `prompt-lib` directory is required. Keep its source with the project.

@@ -2,11 +2,7 @@ import os
 import math
 import pathlib
 from tqdm import tqdm
-from pandarallel import pandarallel
 import multiprocessing
-
-if __name__ == "__main__":
-    pandarallel.initialize(progress_bar=True, nb_workers=1)
 
 from src.sentiment_reversal.task_init import SentimentTransferTaskInit
 from src.sentiment_reversal.task_iterate import SentimentTransferTaskIterate

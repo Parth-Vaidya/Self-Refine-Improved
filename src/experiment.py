@@ -10,6 +10,7 @@ import math
 import os
 import platform
 import sys
+import traceback
 from pathlib import Path
 import time
 import uuid
@@ -175,6 +176,8 @@ def run_record(task, row, config, attempts=4, temperature=0.0, feedback_type="ri
                 record["quality_status"] = "existing model-based feedback metric, not independent ground truth"
         show("FINAL OUTPUT", record["final_output"], terminal)
     except Exception as exc:
+        if os.getenv("SR_DEBUG_TRACEBACK", "").lower() == "true":
+            print(redact(traceback.format_exc()), file=sys.stderr, flush=True)
         record["status"] = "error"
         record["error"] = (redact(str(exc)) if isinstance(exc, InferenceError) else
                            "Experiment failed; inspect call statuses, task input format and required dependencies.")
