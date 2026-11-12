@@ -1,0 +1,63 @@
+[
+  {
+    "id": "prog_01",
+    "category": "Programming",
+    "query": "Write a Python function to check whether a given string is a valid palindrome, ignoring punctuation and casing."
+  },
+  {
+    "id": "prog_02",
+    "category": "Programming",
+    "query": "Explain how Python's dictionary handles hash collisions under the hood and show a simple code example."
+  },
+  {
+    "id": "prog_03",
+    "category": "Programming",
+    "query": "Write a Python function to find the maximum subarray sum using Kadane's algorithm."
+  },
+  {
+    "id": "prog_04",
+    "category": "Programming",
+    "query": "Explain the difference between deepcopy and shallow copy in Python with code illustrations."
+  },
+  {
+    "id": "theo_01",
+    "category": "Theoretical Concepts",
+    "query": "Explain Newton's third law of motion and clarify why action and reaction forces do not cancel each other out."
+  },
+  {
+    "id": "theo_02",
+    "category": "Theoretical Concepts",
+    "query": "Explain the difference between TCP and UDP at the transport layer, including connection establishment and reliability mechanisms."
+  },
+  {
+    "id": "theo_03",
+    "category": "Theoretical Concepts",
+    "query": "Explain the concept of entropy in both thermodynamics and information theory, comparing how each measures disorder or uncertainty."
+  },
+  {
+    "id": "theo_04",
+    "category": "Theoretical Concepts",
+    "query": "What is the CAP theorem in distributed systems? Explain the trade-offs between consistency, availability, and partition tolerance."
+  },
+  {
+    "id": "reas_01",
+    "category": "Reasoning",
+    "query": "A bat and a ball cost $1.10 in total. The bat costs $1.00 more than the ball. How much does the ball cost? Show your reasoning step by step."
+  },
+  {
+    "id": "reas_02",
+    "category": "Reasoning",
+    "query": "If all roses are flowers and some flowers fade quickly, can we logically conclude that some roses fade quickly? Explain why or why not."
+  },
+  {
+    "id": "reas_03",
+    "category": "Reasoning",
+    "query": "You have a 3-gallon jug and a 5-gallon jug, and an unlimited water supply. How can you measure exactly 4 gallons of water?"
+  },
+  {
+    "id": "reas_04",
+    "category": "Reasoning",
+    "query": "Explain the Monty Hall problem: why does switching doors double your probability of winning? Break down the probability distribution."
+  }
+]
+

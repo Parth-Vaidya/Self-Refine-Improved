@@ -1,0 +1,18 @@
+{
+  "last_updated": "2026-11-12 23:00:00",
+  "preferences": {
+    "prefers_step_by_step": {
+      "description": "Prefers step-by-step explanations",
+      "enabled": true
+    },
+    "prefers_simple_code": {
+      "description": "Prefers simple and clean code implementations",
+      "enabled": true
+    },
+    "prefers_examples": {
+      "description": "Prefers practical examples and demonstrations",
+      "enabled": true
+    }
+  }
+}
+

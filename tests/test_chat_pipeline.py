@@ -67,6 +67,25 @@ class ChatPipelineTests(unittest.TestCase):
 
         self.assertEqual(final_resp, "Refined answer including F = ma.")
 
+    def test_early_stopping_on_high_score_skips_refinement(self):
+        pipeline = ChatResponsePipeline(engine="groq:qwen/qwen3.8-27b", max_attempts=2)
+        outputs = [
+            "Optimal initial palindrome checker.",
+            "Critique Summary: None\nTotal score: 10/10",
+        ]
+        calls = []
+
+        def call_side_effect(prompt, stage, **kwargs):
+            calls.append(stage)
+            return outputs.pop(0)
+
+        with patch.object(pipeline, "_call_model", side_effect=call_side_effect):
+            resp = pipeline.generate_chat_response("User: Write a palindrome checker in Python")
+
+        self.assertEqual(resp, "Optimal initial palindrome checker.")
+        # Only generation and feedback are called; refinement is skipped due to high score
+        self.assertEqual(calls, ["generation", "feedback"])
+
     def test_failed_refinement_preserves_initial_response(self):
         pipeline = ChatResponsePipeline(engine="groq:qwen/qwen3.8-27b", max_attempts=2)
         outputs = [

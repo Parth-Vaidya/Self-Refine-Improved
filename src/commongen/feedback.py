@@ -11,7 +11,14 @@ _nlp = None
 def get_nlp():
     global _nlp
     if _nlp is None:
-        _nlp = spacy.load("en_core_web_sm")
+        try:
+            import en_core_web_sm
+            _nlp = en_core_web_sm.load()
+        except Exception:
+            try:
+                _nlp = spacy.load("en_core_web_sm")
+            except Exception:
+                _nlp = spacy.blank("en")
     return _nlp
 from src.utils import Prompt
 
@@ -96,14 +103,25 @@ what concepts from the concept list are missing from the sentence?"""
     def detect_concepts(self, sentence: str, concepts: List[str]) -> Set[str]:
         present_concepts = []
 
-        # Tokenize the sentence and lemmatize the tokens
-        nlp = get_nlp()
-        tokens = nltk.word_tokenize(sentence)
-        lemmas = [token.lemma_ for token in nlp(sentence)]
+        try:
+            tokens = nltk.word_tokenize(sentence)
+        except Exception:
+            tokens = re.findall(r"\b\w+\b", sentence)
+
+        try:
+            nlp = get_nlp()
+            doc = nlp(sentence)
+            lemmas = [token.lemma_ for token in doc if hasattr(token, "lemma_") and token.lemma_]
+        except Exception:
+            lemmas = []
+
+        tokens_lower = {t.lower() for t in tokens}
+        lemmas_lower = {l.lower() for l in lemmas}
 
         # Check if each concept is present in the sentence
         for concept in concepts:
-            if concept in tokens or concept in lemmas:
+            c = concept.lower()
+            if c in tokens_lower or c in lemmas_lower:
                 present_concepts.append(concept)
 
         return set(present_concepts)
