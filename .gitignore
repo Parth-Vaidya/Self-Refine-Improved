@@ -163,6 +163,14 @@ experiment-results/
 /query-*.md
 /*-results.jsonl
 
+# Interactive chat persistence and user profiles
+chats/
+user_profile.json
+
+# Raw evaluation execution artifacts (keep prompts, test profile, and evaluation plans tracked)
+evaluations/*_results.jsonl
+evaluations/*.tmp
+
 # In-progress dialogue checkpoints and atomic-write temporary files
 *.checkpoint.json
 *.checkpoint.json.tmp

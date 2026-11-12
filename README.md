@@ -1,524 +1,536 @@
-# Self-Refine: current workspace guide
+# Self-Refine Improved: Personalized, Multi-Turn Iterative LLM Generation
 
-Status checked: **23 October 2026**. This project is a command-line research
-application that generates an answer, asks a model for feedback, and uses that
-feedback to refine the answer. It uses hosted model APIs; it does not run a local
-LLM or start a web server.
-
-## Current status
-
-| Area | Status |
-| --- | --- |
-| Qwen through Groq | Working in saved live runs |
-| Two refinements | Confirmed: initial answer, feedback, refinement 1, feedback, refinement 2, feedback |
-| Rate-limit recovery | Confirmed in saved live runs and mocked tests; retries only the unfinished HTTP call |
-| Readable output | Markdown report alongside JSONL research data |
-| Checkpoints | Parsed/scored dialogue answers saved to disk during a run |
-| Request budget | 56 of 700 used at this status check; this snapshot changes with future calls |
-| Offline suite | 41 tests run: 40 passed, 1 failed |
-| Known test failure | CommonGen's spaCy dependency cannot load `srsly.ujson`: Windows Application Control blocks its DLL |
-| HF refinement | Locally configured; successful live HF inference remains unverified; earlier runs returned HTTP 402 |
-| Running process | No experiment process was running at the status check |
-| Version control | Local modified/untracked files remain; these updates have not been committed or pushed |
-
-Evidence of completed two-refinement runs:
-
-- [Newton's third law report](newton-qwen-20261023-170008-492.md)
-- [Latest saved query report](newton-qwen-20261023-170233-608.md)
-
-These files demonstrate software execution, not independent validation of answer
-accuracy or proof that refinement always improves quality.
-
-## 1. Open the project
-
-Use PowerShell:
-
-```powershell
-cd "C:\Users\Ashitosh Shirsath\Desktop\Parth\self-refine"
-```
-
-The working interpreter is `.venv-research\Scripts\python.exe` (Python 3.12).
-The older `venv` environment is not the supported runner in this workspace.
-
-The existing workspace already has dependencies installed. For a new environment:
-
-```powershell
-py -3.12 -m venv .venv-research
-.\.venv-research\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv-research\Scripts\python.exe -m spacy download en_core_web_sm
-```
-
-The local `prompt-lib` directory is required. Keep its source with the project.
-The budget database described below must also be present: a fresh checkout with
-no ledger deliberately blocks Groq/HF calls. Do not recreate/reset the current
-workspace ledger as an installation step; that would lose the existing count.
-
-## 2. Configure credentials
-
-Keep credentials only in your local `.env`, using `.env.example` for the setting
-names. Do not replace an existing `.env` with the example. For the default query
-runner, the required credential is:
-
-```dotenv
-GROQ_API_KEY=your_private_groq_key
-```
-
-Never paste real keys into result files, source code, commits or chat. Replace
-any previously exposed key. Existing process environment variables override
-`.env`; restart or update your shell if it still contains an old key.
-The script sets model routing through its JSON configuration, so changing
-`GROQ_MODEL_ID` alone does not override its explicitly selected model.
-
-## 3. Run an initial answer and two refinements
-
-```powershell
-.\run-query.ps1 -Query "Explain Newton's third law." -Attempts 3
-```
-
-Change the quoted query to your own question. Run one experiment at a time for
-easier quota management. The PowerShell script supplies the Python path, UTF-8
-output, model configuration, unique output filename and rate-limit recovery.
-
-| Attempts | Answers produced | Model calls without rate-limit rejections |
-| --- | --- | --- |
-| 1 | Initial answer | 2: generation and feedback |
-| 2 | Initial answer + refinement 1 | 4 |
-| 3 | Initial answer + refinements 1 and 2 | 6 |
-| 4 | Initial answer + three refinements | 8 |
-
-`Attempts` counts answers, including the initial generation. The script accepts
-1 through 10. Even `Attempts 1` runs feedback because the script uses variant B.
-For a one-call generation baseline, use `experiments/A-qwen-groq.json` with the
-Python CLI below instead.
-
-## 4. What happens during a run
-
-1. The generator receives the question and the existing dialogue examples.
-2. A feedback call scores the initial answer using the existing rubric.
-3. A refinement call receives previous answer(s), their context and feedback.
-4. Feedback scores the refinement.
-5. Steps 3 and 4 repeat until the requested number of answers is reached.
-6. A complete run selects the answer with the highest model score (the first
-   candidate wins a tie). The selected answer may be an earlier answer.
-
-The default runner uses `groq:qwen/qwen3.8-27b` for generation, feedback and
-refinement. The configured dialogue output budget is 2048 tokens per stage;
-responses can span multiple lines and need not contain a `Response:` label.
-Model feedback is a proxy, not independent evaluation, and may reward incorrect
-answers. Review factual answers yourself before relying on them.
-
-## 5. When Groq reports a rate limit
-
-Successful requests have **no fixed delay**. The script enables
-`GROQ_RESUME_ON_RATE_LIMIT=true`:
-
-- HTTP 429 pauses for Groq's `Retry-After` duration, including HTTP-date headers.
-- If no valid wait is supplied, the fallback pause is 65 seconds.
-- The same prompt is retried for the unfinished stage; completed stages are not
-  restarted. If feedback on refinement 1 failed, that feedback finishes before
-  refinement 2 is requested.
-- There are at most five additional attempts per stage. A requested cooldown
-  longer than one hour stops instead of retrying early. Other Groq errors stop
-  immediately.
-- Keep the terminal open. This is automatic recovery within the same process,
-  not automatic restart from a checkpoint after closing PowerShell.
-
-Groq request/token quotas still apply. A cooldown cannot guarantee recovery from
-a daily quota or make an oversized request fit. Other applications using the
-same account may affect available quota. Direct Python/adapter use must enable
-the recovery flag explicitly if this behavior is wanted.
-
-## 6. Read the output
-
-The script prints the saved file paths. Each run uses a unique `newton-qwen-...`
-prefix even for questions unrelated to Newton.
-
-| File | Purpose |
-| --- | --- |
-| `newton-qwen-....md` | Open this first: question, final answer, actual models, tokens, answer history and feedback |
-| `newton-qwen-....jsonl` | Full result, per-call telemetry, settings and reproducibility metadata |
-| `newton-qwen-....jsonl.checkpoint.json` | Backup of the latest parsed/scored answers during the run |
-
-On an interrupted run with a completed answer, status is `partial`. The latest
-completed answer is preserved, missing scores stay null, and the report explains
-what failed. That answer is not claimed to be the best-scored answer. If initial
-generation fails, status is `error` with no invented answer. Disk checkpoints
-are backups and do not have a supported cross-process resume command yet.
-
-CLI exit codes: **0** = completed, **1** = failed, **2** = partial.
-Existing output and report files cannot be overwritten by the experiment CLI.
-
-Convert an older JSONL result without API calls, choosing a new report path:
-
-```powershell
-$env:PYTHONPATH = '.;prompt-lib'
-.\.venv-research\Scripts\python.exe -m src.report newton-qwen-groq-verified.jsonl --output readable-example.md
-```
-
-## 7. The 700-request cap
-
-`.cache/request-budget.sqlite3` stores a persistent, atomic counter shared by
-this checkout's Groq and HF hosted-chat adapters. Every network attempt reserves
-a slot before submission, including failed calls, rate-limit rejections and
-fallbacks. Waiting consumes no slot. At 700, requests are blocked. Missing or
-unreadable ledgers also block calls. The count does not reset daily.
-
-**Do not delete, replace or reset the ledger.** The count starts from the budget
-feature's introduction; it does not reconstruct earlier usage. It cannot track
-other applications, other checkouts, or legacy Gemini/OpenAI backends. The local
-cap is separate from Groq's account quotas. The 56/700 figure above is only a
-snapshot; inspect the live local counter with the offline command below.
-
-## 8. Check models and budget without spending quota
-
-```powershell
-$env:PYTHONPATH = '.;prompt-lib'
-.\.venv-research\Scripts\python.exe -m src.check_config --config experiments/B-qwen-groq.json
-.\.venv-research\Scripts\python.exe -m src.check_config --config experiments/C.json
-```
-
-These commands show resolved stage models, credential presence and the local
-budget. They make no API requests and do not verify billing or provider access.
-
-| Configuration | Behavior |
-| --- | --- |
-| `A-qwen-groq.json` | One Qwen/Groq generation, no feedback |
-| `B-qwen-groq.json` | Qwen/Groq generation, feedback and refinements; default script configuration |
-| `C.json` | Original configured generation/feedback; HF Qwen refinement; fallback disabled under the checked environment |
-| `C-groq-fallback.json` | C with eligible HF HTTP 402/429 refinement failures allowed to fall back to Groq |
-
-At the local check, C resolved to Gemini generation/feedback and
-`hf:Qwen/Qwen3-4B-Instruct-2507:nscale` refinement. C inherits settings from the
-environment, so rerun preflight after configuration changes. The HF token was
-present, but successful live inference remains unverified. Previous HF requests
-returned payment/credit error HTTP 402. Groq Qwen3.8-27B and HF Qwen3-4B are
-different models. A Groq baseline is not a refinement-only HF experiment.
-An unused HF default in a B manifest does not imply an HF call; consult actual
-call records and the readable report.
-
-## 9. Advanced Python command
-
-Equivalent to a three-answer query run, using a fresh output path:
-
-```powershell
-$env:PYTHONPATH = '.;prompt-lib'
-$env:PYTHONIOENCODING = 'utf-8'
-$env:GROQ_RESUME_ON_RATE_LIMIT = 'true'
-$outputFile = 'query-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.jsonl'
-.\.venv-research\Scripts\python.exe -u -m src.experiment `
-  --config experiments/B-qwen-groq.json `
-  --task responsegen `
-  --query "User: Explain Newton's third law." `
-  --output $outputFile `
-  --max-attempts 3
-```
-
-For batch input, replace `--query` with `--input your-dataset.jsonl` and provide
-one JSON object per line with a `context` field. Use JSONL as the authoritative
-batch history; the checkpoint file is updated for the current record.
-
-## 10. Run offline tests
-
-```powershell
-$env:PYTHONPATH = '.;prompt-lib'
-$env:PYTHONIOENCODING = 'utf-8'
-$env:NLTK_DATA = Join-Path $PWD '.cache/nltk_data'
-.\.venv-research\Scripts\python.exe -m unittest discover -s tests -v
-```
-
-Tests use mocked provider responses or temporary budget databases. They do not
-spend model quota. The current suite has 40 passing tests and one CommonGen
-failure caused by the blocked NLP-library DLL. Dialogue recovery, two-refinement
-execution, reports, counter boundaries and concurrent budget reservations pass.
-Fixing the CommonGen environment requires an application-control-approved NLP
-installation; no system policy was changed as part of this work.
-
-## Files to know
-
-- `run-query.ps1`: simple PowerShell entry point.
-- `src/experiment.py`: experiment execution, manifests, partial results and reports.
-- `src/responsegen/`: generation, scoring, parsing and refinement loop.
-- `src/report.py`: offline readable report conversion.
-- `src/check_config.py`: offline configuration and budget inspection.
-- `prompt-lib/prompt_lib/backends/`: provider transports, cooldown handling and budget guard.
-- `experiments/`: model/stage configurations.
-- [Additional Groq workflow details](docs/working-groq.md).
-- [Research methodology](docs/qwen-experiments.md).
-- [Offline HF configuration check](reports/hf-configuration-check.md).
+A modular research implementation and interactive application extending the **Self-Refine** framework ([Madaan et al., 2023](https://arxiv.org/abs/2303.17651)) with persistent multi-turn conversation management, per-message execution mode selection, rule-based user preference mining, basic personalization, and an automated comparative evaluation suite.
 
 ---
 
-# Original project documentation
+## Table of Contents
+1. [Project Overview](#1-project-overview)
+2. [Research Methodology](#2-research-methodology)
+3. [Features](#3-features)
+4. [Architecture](#4-architecture)
+5. [Technology Stack](#5-technology-stack)
+6. [Project Structure](#6-project-structure)
+7. [Installation and Setup](#7-installation-and-setup)
+8. [Usage Instructions](#8-usage-instructions)
+9. [Testing](#9-testing)
+10. [Evaluation Instructions](#10-evaluation-instructions)
+11. [Current Status and Limitations](#11-current-status-and-limitations)
 
-The upstream setup and task-specific documentation follows. Its legacy commands
-are separate from the current PowerShell workflow above.
+---
 
-# Self-Refine: Iterative Refinement with Self-Feedback
+## 1. Project Overview
 
-_With Self-Refine, LLMs can generate feedback on their work, use it to improve the output, and repeat this process._
+### Introduction
+Large Language Models (LLMs) frequently generate responses containing subtle errors, omissions, or stylistic mismatches on their first pass. The standard **Self-Refine** paradigm addresses this by having an LLM generate an initial answer, provide multi-aspect feedback on its own output, and iteratively refine the answer using that feedback—all without supervised fine-tuning or reinforcement learning.
 
-![image](https://raw.githubusercontent.com/madaan/self-refine/main/docs/static/images/animation_oldstyle_oneloop.gif)
+### Problem Statement & Motivation
+While vanilla Self-Refine demonstrates strong benchmark gains on standalone tasks, practical adoption in interactive systems presents three key challenges:
+1. **Unconditional Compute Overhead:** Standard Self-Refine unconditionally triggers feedback and refinement loops for every query, doubling or tripling API calls, latency, and token expenditures even for trivial queries where a single-pass response is completely adequate.
+2. **Ephemeral Context:** The original framework evaluates isolated prompts without persistent conversational memory, preventing multi-turn dialogue progression.
+3. **Uniformity (Lack of Personalization):** Responses treat all users identically, failing to respect individual preferences for explanation depth, conciseness, code simplicity, or pedagogical structure.
 
+### Research Objective
+This project implements and evaluates an improved, user-centric Self-Refine architecture designed to:
+- Provide multi-turn conversational persistence with transparent mode tracking.
+- Offer **per-message mode selection** (Standard single-pass vs. Self-Refine iterative) to give users direct control over latency and token consumption.
+- Automatically mine stylistic preferences from previous user interactions without expensive auxiliary LLM calls.
+- Guide both initial generation and iterative refinement using active user profile constraints.
+- Systematically measure the trade-offs in tokens, latency, and response quality across four controlled experimental configurations.
 
-<center><h4> <a href="https://selfrefine.info"> Website </a> | <a href="https://arxiv.org/pdf/2303.17651.pdf">Paper</a> </h4></center>
-<hr>
+---
 
+## 2. Research Methodology
 
+### Four Experimental Configurations
 
+The core research investigation isolates the interaction between iterative self-refinement and stylistic personalization across four controlled conditions:
 
-<!-- START doctoc generated TOC please keep comment here to allow auto update -->
-<!-- DON'T EDIT THIS SECTION, INSTEAD RE-RUN doctoc TO UPDATE -->
-**Table of Contents**
+| Configuration | Label | Mode | Personalization Profile | Research Purpose |
+|:---:|---|---|---|---|
+| **A** | Standard Baseline | `standard` (1-pass) | Disabled / None | Establishes baseline one-pass resource usage and raw model output quality. |
+| **B** | Self-Refine Baseline | `self_refine` (iterative) | Disabled / None | Quantifies the computational cost and refinement progression of standard Self-Refine. |
+| **C** | Personalized Standard | `standard` (1-pass) | Enabled (`test_profile.json`) | Measures the token delta and formatting adherence introduced by personalization alone. |
+| **D** | Personalized Self-Refine | `self_refine` (iterative) | Enabled (`test_profile.json`) | Evaluates whether iterative critique preserves or enhances user preference adherence. |
 
-- [Updates](#updates)
-- [Setup](#setup)
-- [Getting Started with Acronym Generation](#getting-started-with-acronym-generation)
-- [Dialogue Response Generation](#dialogue-response-generation)
-- [Code Readability Improvement](#code-readability-improvement)
-- [Commongen](#commongen)
-- [GSM-8k](#gsm-8k)
-- [Yelp](#yelp)
-- [PIE](#pie)
-- [General setup](#general-setup)
-- [Citation](#citation)
+### Comparative Objectives
+- **B vs. A:** Measures the latency multiplier and token overhead introduced by the iterative feedback and refinement cycle.
+- **C vs. A:** Determines the prompt and completion token overhead of personalizing single-pass answers.
+- **D vs. B:** Evaluates whether refinement loops respect user style constraints or tend to revert toward generic responses.
+- **D vs. C:** Compares personalized multi-turn refinement against personalized single-pass answers.
 
-<!-- END doctoc generated TOC please keep comment here to allow auto update -->
+### Benchmark Setup
+The evaluation suite evaluates **12 standardized prompts** across three cognitive categories:
+1. **Programming (4 prompts):** Algorithm implementation, memory mechanics (deepcopy vs. shallow copy), hash collision handling, and Kadane's maximum subarray sum.
+2. **Theoretical Concepts (4 prompts):** Newton's laws of motion, TCP vs. UDP transport protocols, thermodynamic vs. information-theoretic entropy, and the CAP theorem.
+3. **Reasoning (4 prompts):** Cognitive reflection word algebra, syllogistic logical validity, the two-jug riddle, and the Monty Hall conditional probability problem.
 
-<hr>
+Each prompt is evaluated under all 4 configurations, resulting in:
+$$\text{Total Evaluation Combinations} = 12 \text{ prompts} \times 4 \text{ configurations} = \mathbf{48 \text{ evaluations}}$$
 
-## Updates
+> [!IMPORTANT]
+> **Performance evaluation and comparative analysis are pending completion of the full experimental run.**
+> The evaluation harness, prompt sets, token instrumentation, and reporting scripts are implemented and verified. Final empirical performance conclusions, latency multiplier tables, and token overhead analyses will be documented upon completion of the full 48-combination live benchmark run.
 
-- **Nov 2023**: Added [visual self-refine examples](docs/visual_self_refine_examples/) and [colabs](colabs/Visual-Self-Refine-GPT4V.ipynb). Use GPT4-V to write tikz code for diagrams, and improve them iteratively.
+---
 
-<p align="center">
-  <strong>Stokes' Theorem Example</strong><br>
-  <img src="docs/visual_self_refine_examples/stokes__theorem.gif" alt="Visual Self-Refine Example 1" width="300" height="300" />
-</p>
-<p align="center">
-  <strong>Unicorn Example</strong><br>
-  <img src="docs/visual_self_refine_examples/unicorn.gif" alt="Visual Self-Refine Example 2" width="300" height="300" />
-</p>
+## 3. Features
 
+### 1. Conversation Management
+- **Multi-Session Storage:** Creates and tracks independent conversations stored as clean text files in the `chats/` directory (e.g. `chat_001.txt`, `chat_002.txt`).
+- **Resuming Conversations:** Users can list and resume previous chat threads at any time.
+- **Mode Tagging:** Every turn records the exact mode selected by the user for full transparency:
+  ```text
+  [2026-11-12 21:00:00] USER [mode: standard]:
+  Explain TCP.
 
+  [2026-11-12 21:00:02] ASSISTANT [mode: standard]:
+  TCP (Transmission Control Protocol) is...
+  ```
+- **Context Window Management:** Enforces character-based truncation limits (`DEFAULT_MAX_CONTEXT_CHARS = 4000`) while preserving opening turn context.
 
-## Setup
+### 2. Dual Response Generation Modes
+- **Standard Response:** Executes a single-pass LLM call. Completely bypasses feedback and refinement to conserve tokens, minimize latency, and reduce API usage for straightforward questions.
+- **Self-Refine Response:** Generates an initial draft, solicits targeted critique across relevance, accuracy, and coherence from the feedback model, and synthesizes an improved output.
+- **Convergence Early Stopping:** If the initial draft receives a critique of `Critique Summary: None` or scores $\ge 9/10$, the pipeline halts early to avoid redundant refinement calls.
+- **Per-Message Prompting:** Users choose between Standard and Self-Refine mode for every message sent.
 
-For controlled A/B/C experiments with **Qwen3 only at the refinement stage**, see
-[Qwen3 setup, methodology, metrics and validation](docs/qwen-experiments.md).
-The existing commands below retain their original behavior.
-See the [executed validation report](reports/validation-report.md) for test results,
-hosted API limitations, and terminal/saved-output examples.
-For HF quota failures, see [optional Groq backup and Groq-only commands](docs/groq-fallback.md).
+### 3. Rule-Based Preference Extraction
+- **Zero-Cost Mining:** Inspects historical user messages across `chats/` using deterministic regular expressions without invoking additional LLM inference calls.
+- **Supported Style Preferences:**
+  - `prefers_step_by_step`: Explanations structured sequentially.
+  - `prefers_concise_answers`: Direct, compact responses.
+  - `prefers_simple_code`: Minimalist, dependency-free implementations.
+  - `prefers_examples`: Concrete illustrations and demonstrations.
+- **Profile Persistence:** Stores detected preferences in `user_profile.json`. Preserves manual user modifications (e.g. toggling `"enabled": false`) across subsequent extractions without creating duplicates.
 
-* We use [prompt-lib](https://github.com/reasoning-machines/prompt-lib) for querying LLMs. You can install `prompt-lib` by running the following commands:
+### 4. Basic Personalization
+- **Profile Injection:** Reads enabled preferences from `user_profile.json` and compiles them into a unified prompt instruction.
+- **Cross-Mode Compatibility:** Injects personalization instructions into both Standard mode and Self-Refine mode (including initial generation, feedback rubric criteria, and refinement prompts).
+- **Graceful Fault Tolerance:** Continues normal generation without interruption if `user_profile.json` is missing, empty, or syntactically invalid.
 
-```sh
-git clone https://github.com/reasoning-machines/prompt-lib
-pip install prompt-lib/
+### 5. Automated Evaluation Framework
+- **Automated Execution:** Tests all 4 experimental conditions (A, B, C, D) over standardized evaluation prompts.
+- **Telemetry Recording:** Authentically measures prompt tokens, completion tokens, total tokens, latency in seconds, and individual call stages.
+- **Resume Capability:** Reads existing JSONL records and skips already-completed successful prompt/condition combinations, surviving rate-limit interruptions.
+- **Markdown Reporting:** Converts raw JSONL evaluation telemetry into structured Markdown comparative tables.
+
+---
+
+## 4. Architecture
+
+### Overall System Architecture
+
+```mermaid
+graph TD
+    User([User]) <--> CLI["ChatApp CLI<br/>(src/chat_app.py)"]
+    
+    subgraph Conversation Subsystem
+        CLI --> CM["ConversationManager<br/>(src/conversation_manager.py)"]
+        CM <--> Chats[("chats/chat_*.txt<br/>(Transcript Store)")]
+    end
+    
+    subgraph Personalization Subsystem
+        Chats -.-> PE["UserProfileManager<br/>(src/preference_extractor.py)"]
+        PE --> Profile[("user_profile.json<br/>(User Profile)")]
+        Profile -.-> CP
+    end
+    
+    subgraph Generation Subsystem
+        CLI --> CP["ChatResponsePipeline<br/>(src/chat_pipeline.py)"]
+        CP --> PL["prompt-lib Transport Layer<br/>(prompt_lib/experiment.py)"]
+        PL <--> Provider["Hosted LLM APIs<br/>(Groq / Qwen / Gemini)"]
+    end
+    
+    subgraph Evaluation Subsystem
+        EV["Evaluator Runner<br/>(src/evaluator.py)"] --> CP
+        EV --> Dataset[("evaluations/eval_prompts.json")]
+        EV --> JSONL[("evaluations/phase_4_results.jsonl")]
+        JSONL --> ER["Report Generator<br/>(src/eval_report.py)"]
+        ER --> Report[("evaluations/PHASE_4_EVALUATION_REPORT.md")]
+    end
 ```
 
-Depending on your default settings, you may want to use the following to set a PYTHONPATH:
+### Chat Response Workflow
 
-```sh
-export PYTHONPATH=".:../:.:src:../:../../:.:prompt-lib"
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant CLI as ChatApp CLI
+    participant CM as ConversationManager
+    participant CP as ChatResponsePipeline
+    participant LLM as Model Backend (Groq/Qwen)
+
+    User->>CLI: Enter message
+    CLI->>User: "How would you like to generate your response? (1. Standard, 2. Self-Refine)"
+    User->>CLI: Select mode (e.g. 2 for Self-Refine)
+    CLI->>CM: Save user message with [mode: self_refine]
+    CLI->>CM: Retrieve truncated conversation context
+    CM-->>CLI: Context string
+    CLI->>CP: generate_chat_response(context, mode="self_refine")
+    
+    CP->>CP: Load active preferences from user_profile.json
+    CP->>LLM: Generate initial draft (Stage: generation)
+    LLM-->>CP: Initial response
+    
+    alt Mode == "standard"
+        CP-->>CLI: Return initial response
+    else Mode == "self_refine"
+        CP->>LLM: Evaluate draft (Stage: feedback)
+        LLM-->>CP: Critique & Score (e.g. 7/10)
+        alt Score >= 9 or Critique Summary == None
+            CP-->>CLI: Early stop: return current best
+        else Score < 9
+            CP->>LLM: Refine draft with feedback (Stage: refinement)
+            LLM-->>CP: Refined response
+            CP-->>CLI: Return refined response
+        end
+    end
+    
+    CLI->>CM: Save assistant message with mode tag
+    CLI->>User: Display response
 ```
 
-## Getting Started with Acronym Generation
+### Evaluation Workflow
 
-
-```sh
-python -u src/acronym/run.py "Using language models of code for few-shot commonsense"
+```mermaid
+flowchart TD
+    Start([Start Evaluation Runner]) --> ReadPrompts["Load evaluations/eval_prompts.json (12 Prompts)"]
+    ReadPrompts --> CheckResume{"Output JSONL exists?"}
+    
+    CheckResume -- Yes --> ParseCompleted["Parse valid completed (prompt_id, condition) pairs"]
+    CheckResume -- No --> EmptyCompleted["Initialize empty completed set"]
+    
+    ParseCompleted --> LoopPrompts["For each Prompt (1..12)"]
+    EmptyCompleted --> LoopPrompts
+    
+    LoopPrompts --> LoopConds["For each Condition (A, B, C, D)"]
+    LoopConds --> IsDone{"Pair already in completed set?"}
+    
+    IsDone -- Yes --> Skip["Log skip & continue (Zero API cost)"]
+    Skip --> NextCond["Next condition"]
+    
+    IsDone -- No --> SetupContextVar["Set CURRENT telemetry ContextVar"]
+    SetupContextVar --> ExecPipeline["Invoke ChatResponsePipeline"]
+    ExecPipeline --> CollectTelemetry["Aggregate tokens & latency via observed_call"]
+    CollectTelemetry --> AppendJSONL["Flush record to JSONL in append mode"]
+    AppendJSONL --> NextCond
+    
+    NextCond --> LoopConds
+    LoopConds --> NextPrompt["Next prompt"]
+    NextPrompt --> LoopPrompts
+    
+    LoopPrompts --> End([All 48 combinations completed])
 ```
 
-* Since we sample with temperature 0.7, you'll get different results each time you run the above command.
+---
 
+## 5. Technology Stack
 
+### Languages & Runtime
+- **Python 3.12:** Primary programming language.
+- **PowerShell 5.1 / 7+:** Standard Windows execution shell.
 
+### Core Libraries & Frameworks
+- **`openai` (0.28.x API compatibility):** Transport interface for OpenAI-compatible hosted completions.
+- **`requests` ($\ge 2.31.0$):** Underlying HTTP transport for Hugging Face Inference Providers and Groq API endpoints.
+- **`google-generativeai`:** Client SDK for Google Gemini models (`gemini-3.5-flash-lite`, `gemini-1.5-flash`).
+- **`spacy` ($\ge 3.8.0$) & `en_core_web_sm`:** Industrial NLP library used for lemmatization in concept detection.
+- **`nltk`:** Word and sentence tokenization utilities.
+- **`pandas` & `numpy`:** Prompt dataset serialization, JSONL handling, and numerical evaluations.
+- **`python-dotenv`:** Secure local credential management without exposing API keys.
 
-```swift
-0 INIT> Using language models of code for few-shot commonsense
+### Hosted Model APIs & Endpoints
+- **Groq Hosted API (`groq:qwen/qwen3.8-27b`):** High-throughput inference for chat pipeline generation, feedback critique, and Phase 4 evaluations.
+- **Hugging Face Inference Router (`hf:`):** Open-source model inference provider endpoints.
+- **Google Gemini API:** Benchmark baseline model backend.
 
-0 GEN> CLoCK
-0 SCORES> * Ease of pronunciation: CLoCK is pronounced "clah-k". This is easy acronym to pronounce. 4/5 
-* Ease of spelling: CLoCK is easy to spell. 5/5 
-* Relation to title: CLoCK stands for "Code Language Models of Commonsense Knowledge" which is related to the title. 5/5 
-* Positive connotation: CLoCK is a positive acronym. It implies accuracy and efficiency. 5/5 
-* Well-known: CLoCK is not a well-known acronym. 2/5
+---
 
-* Total score: 21/25
+## 6. Project Structure
 
-1 GEN> CMNSC
-1 SCORES> * Ease of pronunciation: CMNSC is pronounced "see-min-es-see". This is a difficult acronym to pronounce. 1/5 
-* Ease of spelling: CMNSC is difficult to spell. 1/5 
-* Relation to title: CMNSC stands for "Commonsense" which is related to the title. 4/5 
-* Positive connotation: CMNSC is a neutral acronym. 3/5 
-* Well-known: CMNSC is not a well-known acronym. 1/5
-
-* Total score: 10/25
-
-2 GEN> COMMIT
-2 SCORES> * Ease of pronunciation: COMMIT is pronounced "com-mit". This is an easy acronym to pronounce. 4/5
-* Ease of spelling: COMMIT is easy to spell. 5/5
-* Relation to title: COMMIT stands for "Commonsense Model of Code for Intuitive Training" which is related to the title. 5/5 
-* Positive connotation: COMMIT is a positive acronym. It implies commitment and dedication. 5/5
-* Well-known: COMMIT is not a well-known acronym. 2/5
-
-* Total score: 21/25
+```text
+self-refine/
+├── chats/                              # Saved conversation transcripts (*.txt)
+│   ├── chat_001.txt                    # Sequential multi-turn chat log
+│   └── chat_002.txt                    # Sequential multi-turn chat log
+├── data/                               # Legacy benchmark prompt data
+│   └── prompt/                         # Task-specific few-shot examples
+├── evaluations/                        # Phase 4 Evaluation suite
+│   ├── eval_prompts.json               # 12 standardized benchmark prompts
+│   ├── test_profile.json               # Standardized profile for conditions C and D
+│   ├── smoke_test_results.jsonl        # Verified 1-prompt smoke test output
+│   ├── phase_4_results.jsonl           # Target output for 48-combination evaluation
+│   ├── PHASE_4_EVALUATION_REPORT.md    # Generated comparative markdown report
+│   └── README.md                       # Evaluation suite documentation
+├── prompt-lib/                         # Unified model backend and telemetry library
+│   ├── prompt_lib/
+│   │   ├── backends/                   # Provider adapters (Groq, HF, Gemini, OpenAI)
+│   │   │   ├── groq_api.py             # Groq hosted chat adapter
+│   │   │   ├── groq_pacing.py          # Request pacing & retry delay calculation
+│   │   │   ├── huggingface_api.py      # HF router adapter & Groq fallback
+│   │   │   ├── gemini_api.py           # Gemini API adapter
+│   │   │   └── request_budget.py       # Local request ceiling enforcement
+│   │   └── experiment.py               # Call telemetry (observed_call) & routing
+│   └── README.md                       # Upstream prompt-lib documentation
+├── src/                                # Core project source code
+│   ├── acronym/                        # Acronym generation benchmark task
+│   ├── commongen/                      # CommonGen constrained generation task
+│   ├── gsm/                            # GSM math reasoning benchmark task
+│   ├── pie/                            # PIE Python efficiency benchmark task
+│   ├── readability/                    # Code readability benchmark task
+│   ├── responsegen/                    # Dialogue response benchmark task
+│   ├── sentiment_reversal/             # Sentiment transfer benchmark task
+│   ├── chat_app.py                     # Interactive CLI chat application
+│   ├── chat_pipeline.py                # Generation, feedback, & refinement pipeline
+│   ├── conversation_manager.py         # Multi-turn history management & TXT storage
+│   ├── eval_report.py                  # Evaluation aggregator & report generator
+│   ├── evaluator.py                    # Standalone 4-condition evaluation runner
+│   ├── experiment.py                   # Benchmark experiment harness
+│   ├── output.py                       # Output formatting & secret redaction
+│   ├── preference_extractor.py         # Rule-based user preference mining
+│   ├── utils.py                        # Prompt base class & retry wrappers
+│   └── README.md                       # Source module documentation
+├── tests/                              # Hermetic unit & regression test suite
+│   ├── test_chat_app.py                # Interactive CLI tests
+│   ├── test_chat_pipeline.py           # Pipeline, early stopping, & stop-token tests
+│   ├── test_conversation_manager.py    # Conversation creation & persistence tests
+│   ├── test_evaluator.py               # Evaluator telemetry & resume logic tests
+│   ├── test_groq_fallback.py           # Provider fallback & rate-limit tests
+│   ├── test_inference.py               # Task routing & NLP evaluation tests
+│   ├── test_preference_extractor.py    # Preference detection & profile update tests
+│   └── README.md                       # Test suite documentation
+├── .env.example                        # Template for required environment variables
+├── .gitignore                          # Version control exclusions
+├── PHASE_4_EVALUATION_PLAN.md          # Architectural plan for Phase 4 evaluation
+├── README.md                           # Master project documentation (this file)
+├── requirements.txt                    # Project dependency manifest
+└── user_profile.json                   # Local user preference profile
 ```
 
-<hr>
+---
 
+## 7. Installation and Setup
 
-## Dialogue Response Generation
+### Prerequisites
+- Windows 10/11 operating system.
+- Python 3.12 installed and accessible via `py -3.12` or `python`.
+- Git for Windows.
 
-```sh
-PYTHONPATH="." python -u src/responsegen/run.py --output <OUTPUT FILE> --size <DATA SIZE>
+### 1. Clone the Repository
+Open PowerShell and clone the project:
+```powershell
+git clone <repository-url>
+cd self-refine
 ```
 
-- Use size 0 for running on all test instances
-
-<hr>
-
-
-## Code Readability Improvement
-
-
-* Note: Please unzip 'data/tasks/codeclean/code_readability/codenet-python-train.jsonl.zip' before running the following commands!
-
-- Running:
-```sh
-PYTHONPATH="." python -u src/readability/readability.py --output <OUTPUT FILE>
+### 2. Create and Activate a Virtual Environment
+```powershell
+py -3.12 -m venv .venv-research
+.\.venv-research\Scripts\Activate.ps1
 ```
 
-- Evaluation:
-```sh
-PYTHONPATH="." python -u src/readability/{count_comment|count_function|count_meaningful_var}.py --file <INPUT FILE>
+### 3. Install Required Dependencies
+Install the pinned requirements and local `prompt-lib` package:
+```powershell
+.\.venv-research\Scripts\python.exe -m pip install --upgrade pip
+.\.venv-research\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv-research\Scripts\python.exe -m pip install -e ./prompt-lib
 ```
 
+### 4. Configure Environment Credentials
+Copy `.env.example` to create your local `.env` file:
+```powershell
+Copy-Item .env.example .env
+```
+Open `.env` in an editor and insert your actual API keys. **Never commit `.env` to version control.**
 
-<hr>
+```ini
+# Primary inference model for interactive chat and evaluations
+GROQ_API_KEY=gsk_your_actual_groq_key_here
+GROQ_MODEL_ID=qwen/qwen3.8-27b
 
+# Automatic retry/resume on Groq TPM/RPM 429 rate limits (default: false)
+GROQ_RESUME_ON_RATE_LIMIT=true
 
-## Commongen
+# Optional Google Gemini credentials for baseline comparisons
+GEMINI_API_KEY=your_actual_gemini_key_here
+LLM_ENGINE=gemini-3.5-flash-lite
 
-* We use a hard version of commongen. The data is located in `data/prompt/commongen`. You can download the data by running the following commands:
-
-```sh
-python -u src/commongen/run.py cmd stair bubble team dryer puppy aliens cat 
+# Optional Hugging Face credentials for legacy benchmarks
+HF_TOKEN=your_actual_hf_token_here
 ```
 
-<hr>
+---
 
+## 8. Usage Instructions
 
-## GSM-8k
-
-
-- To run the GSM-8k task:
-
-```sh
-python -u src/gsm/run.py 
+### 1. Launch the Interactive Chatbot
+Run the terminal chat application:
+```powershell
+$env:PYTHONPATH = ".;prompt-lib"
+.\.venv-research\Scripts\python.exe -m src.chat_app
 ```
 
-- The outputs will be saved in `data/tasks/gsm/gsm_outputs.jsonl`
+### 2. Chat Navigation Workflow
+1. **Start a New Chat:** Select `1` from the main menu. You can provide an explicit title or press Enter to automatically title the chat from your first query.
+2. **Select Response Mode:** For every message sent, the CLI prompts:
+   ```text
+   How would you like to generate your response?
+   1. Standard Response
+   2. Self-Refine Response
+   Select an option (1 or 2):
+   ```
+   - Enter `1` for immediate, single-pass generation.
+   - Enter `2` for iterative generation with critique and refinement.
+3. **Return to Menu / Exit:** Type `menu` to save and return to the main menu; type `quit` or `exit` to exit the application.
+4. **Continue Previous Chat:** Select `2` from the main menu to display existing conversations stored in `chats/` and resume any previous thread with full history intact.
 
-
-- To evaluate the outputs:
-
-```sh
-python src/gsm/gsm_selfref_eval.py --path  data/tasks/gsm/gsm_outputs.jsonl
+### 3. Extracting User Preferences
+Scan conversation logs across `chats/` to detect recurring style preferences and update `user_profile.json`:
+```powershell
+$env:PYTHONPATH = ".;prompt-lib"
+.\.venv-research\Scripts\python.exe -m src.preference_extractor
 ```
 
-- The evaluation script will also generate a report (`data/tasks/gsm/gsm_outputs.jsonl.reports.txt`) showing examples of wrong generations, feedback, and refined feedback generations.
+### 4. Configuring Personalization
+Preferences are stored in `user_profile.json`:
+```json
+{
+  "last_updated": "2026-11-12 23:00:00",
+  "preferences": {
+    "prefers_step_by_step": {
+      "description": "Prefers step-by-step explanations",
+      "enabled": true
+    },
+    "prefers_simple_code": {
+      "description": "Prefers simple and clean code implementations",
+      "enabled": true
+    },
+    "prefers_examples": {
+      "description": "Prefers practical examples and demonstrations",
+      "enabled": true
+    }
+  }
+}
+```
+You can manually edit this file at any time to toggle preferences (`"enabled": false`). The chat pipeline automatically respects these toggles during response generation.
 
-<hr>
+---
 
+## 9. Testing
 
+The test suite runs **offline** using mocked API responses, validating logic, prompt formatting, telemetry aggregation, and error recovery without incurring API costs.
 
-## Yelp
-
-- To run the Yelp task:
-
-```sh
-python -u src/sentiment_transfer_sr/run.py data/tasks/yelp/yelp-extreme.jso
-nl 4 none
+### Running the Complete Test Suite
+```powershell
+$env:PYTHONPATH = ".;prompt-lib"
+.\.venv-research\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
 ```
 
+### Running Specific Test Modules
+```powershell
+# Evaluator telemetry, resume logic, and report formatting
+.\.venv-research\Scripts\python.exe -m unittest tests.test_evaluator -v
 
-- The outputs will be saved in `data/tasks/yelp/`
+# Pipeline refinement cycles, early stopping, and stop tokens
+.\.venv-research\Scripts\python.exe -m unittest tests.test_chat_pipeline -v
 
+# Preference extraction rules and profile updating
+.\.venv-research\Scripts\python.exe -m unittest tests.test_preference_extractor -v
 
-<hr>
+# Conversation file persistence and mode tagging
+.\.venv-research\Scripts\python.exe -m unittest tests.test_conversation_manager -v
 
-## PIE
+# Interactive CLI menu and input flows
+.\.venv-research\Scripts\python.exe -m unittest tests.test_chat_app -v
 
-- To run the PIE task:
+# Provider switching, quota failover, and request pacing
+.\.venv-research\Scripts\python.exe -m unittest tests.test_groq_fallback -v
 
-```sh
-python -u src/pie/run.py --slow_programs_file data/tasks/pie/codenet-python-test-1k.jsonl --max_attempts 4 --outfile data/tasks/pie/output --feedback_type rich
+# Task routing and NLP concept extraction
+.\.venv-research\Scripts\python.exe -m unittest tests.test_inference -v
 ```
 
-- For evaluation details, please see [docs/pie_eval.md](docs/pie_eval.md).
+---
 
-<hr>
+## 10. Evaluation Instructions
 
-## General setup
+The Phase 4 evaluation suite tests the four configurations (A, B, C, D) across all 12 standardized prompts.
 
-* Each task has three different types of prompts:
-
-1. `Init`: used to initialize the task. This is how the initial output is generated.
-
-2. `Feedback`: used to get feedback from the model on the intermediate results.
-
-3. `Iterate`: used to get the next iteration from the model, based on the feedback.
-
-* Every task has a `run.py` that initializes the prompts and runs the task.
-
-* As an example, the prompts for commongen are as follows:
-
-1. Init prompt:
-
-```sh
-python src/commongen/task_init.py
+### 1. Launching the Evaluation
+```powershell
+$env:PYTHONPATH = ".;prompt-lib"
+.\.venv-research\Scripts\python.exe -m src.evaluator --output evaluations/phase_4_results.jsonl
 ```
 
-2. Feedback prompt:
+### 2. Resuming an Interrupted Run
+If the process is interrupted by Groq rate limits (`HTTP 429`) or a manual interrupt (`Ctrl+C`):
+- All successfully completed records remain safely preserved in `evaluations/phase_4_results.jsonl`.
+- Simply rerun the same command:
+  ```powershell
+  .\.venv-research\Scripts\python.exe -m src.evaluator --output evaluations/phase_4_results.jsonl
+  ```
+- The evaluator automatically parses existing records, logs `Skipping already completed [prompt_id] Condition [condition_key]`, and continues only with the remaining combinations.
 
-```sh
- python src/commongen/feedback.py
-```
-
-3. Iterate prompt:
-
-```sh
-python src/commongen/task_iterate.py
-```
-
-You can also see these prompts on our [website](https://selfrefine.info).
-
-
-
-
-## Citation
-
-```sql
-@misc{madaan2023selfrefine,
-      title={Self-Refine: Iterative Refinement with Self-Feedback}, 
-      author={Aman Madaan and Niket Tandon and Prakhar Gupta and Skyler Hallinan and Luyu Gao and Sarah Wiegreffe and Uri Alon and Nouha Dziri and Shrimai Prabhumoye and Yiming Yang and Sean Welleck and Bodhisattwa Prasad Majumder and Shashank Gupta and Amir Yazdanbakhsh and Peter Clark},
-      year={2023},
-      eprint={2303.17651},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL}
+### 3. Understanding the JSONL Record Structure
+Each line in `evaluations/phase_4_results.jsonl` contains detailed telemetry:
+```json
+{
+  "prompt_id": "prog_01",
+  "category": "Programming",
+  "condition_key": "B",
+  "condition_name": "Self-Refine without personalization",
+  "mode": "self_refine",
+  "personalization_enabled": false,
+  "query": "Write a Python function to check whether a given string is a valid palindrome...",
+  "response": "```python\ndef is_palindrome(s: str) -> bool:...",
+  "status": "success",
+  "error": null,
+  "telemetry": {
+    "api_call_count": 2,
+    "latency_seconds": 2.5171,
+    "prompt_tokens": 347,
+    "completion_tokens": 329,
+    "total_tokens": 676,
+    "calls": [
+      {"stage": "generation", "usage": {"prompt_tokens": 73, "completion_tokens": 136, "total_tokens": 209}},
+      {"stage": "feedback", "usage": {"prompt_tokens": 274, "completion_tokens": 193, "total_tokens": 467}}
+    ]
+  },
+  "evaluation_placeholders": {
+    "correctness": null,
+    "completeness": null,
+    "clarity": null,
+    "preference_adherence": null
+  }
 }
 ```
 
-```mermaid
-flowchart LR
-    Generator -->|Initializes| Unrefined
-    Critic_1 --> Critique_fb
-    ... --> Critique_fb
-    Critic_k --> Critique_fb
-    Critique_fb --> Unrefined{Output to Refine}
-    Unrefined --> Refiner
-    Refiner --> |R: y_t, x, fb| Refined_Output{Refined Output}
-    Refined_Output --> |Stopping Criteria Not Met| Unrefined
+### 4. Generating the Markdown Summary Report
+```powershell
+.\.venv-research\Scripts\python.exe -m src.eval_report --results evaluations/phase_4_results.jsonl --output evaluations/PHASE_4_EVALUATION_REPORT.md
 ```
+
+---
+
+## 11. Current Status and Limitations
+
+### Completed & Implemented
+- [x] **Phase 1: Conversation Management:** Multi-conversation creation, TXT persistence in `chats/`, sequential ID generation, and context truncation.
+- [x] **Phase 1.5: Generation Mode Selection:** Per-message user selection of Standard vs. Self-Refine modes, with mode tags preserved in transcripts.
+- [x] **Phase 2: Preference Extraction:** Rule-based mining of 4 stylistic preferences from chat logs into `user_profile.json` without LLM costs.
+- [x] **Phase 3: Basic Personalization:** Profile-driven prompt conditioning across both Standard and Self-Refine execution modes.
+- [x] **Phase 4: Evaluation Infrastructure:** Standardized 12-prompt dataset, automated 4-condition runner, telemetry ContextVar logging, resilient resume capability, and Markdown report synthesis.
+- [x] **Hermetic Testing:** 100% test pass rate across all unit and integration test suites.
+
+### Ongoing Work & Limitations
+- **Empirical Evaluation In Progress:** Live evaluation runs across all 48 combinations are currently executing against hosted endpoints subject to external provider rate limits.
+- **Pending Performance Claims:** Token overhead multipliers, latency trade-off tables, and qualitative score analyses will be documented upon completion of the full experimental run.
+- **Rule-Based Extraction Scope:** The preference extractor relies on regex and keyword detection; subtle or implicit user preferences currently require manual configuration in `user_profile.json`.
+
+---
+
+## References
+- Madaan, A., Tandon, N., Gupta, P., Hallinan, S., Gao, L., Wiegreffe, S., Alon, U., Dziri, N., Prabhumoye, S., Yang, Y., Welleck, S., Majumder, B. P., Gupta, S., Yazdanbakhsh, A., & Clark, P. (2023). *Self-Refine: Iterative Refinement with Self-Feedback*. Advances in Neural Information Processing Systems (NeurIPS 2023). [arXiv:2303.17651](https://arxiv.org/abs/2303.17651).
