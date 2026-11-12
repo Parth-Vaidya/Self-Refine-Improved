@@ -140,7 +140,7 @@ class ChatApp:
                 continue
 
             print(f"Assistant: {reply}\n")
-            self.manager.save_message(conv_id, "assistant", reply)
+            self.manager.save_message(conv_id, "assistant", reply, mode=mode)
 
     def start_new_chat(self) -> bool:
         title_input = self._prompt(

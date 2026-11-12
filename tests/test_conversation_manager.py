@@ -145,22 +145,23 @@ class ConversationManagerTests(unittest.TestCase):
             manager = ConversationManager(tmpdir)
             conv_id = manager.create_conversation("Modes Test")
             manager.save_message(conv_id, "user", "Message 1", mode="standard")
-            manager.save_message(conv_id, "assistant", "Answer 1")
+            manager.save_message(conv_id, "assistant", "Answer 1", mode="standard")
             manager.save_message(conv_id, "user", "Message 2", mode="self_refine")
-            manager.save_message(conv_id, "assistant", "Answer 2")
+            manager.save_message(conv_id, "assistant", "Answer 2", mode="self_refine")
 
             loaded = manager.load_conversation(conv_id)
             messages = loaded["messages"]
             self.assertEqual(len(messages), 4)
             self.assertEqual(messages[0].get("mode"), "standard")
-            self.assertIsNone(messages[1].get("mode"))
+            self.assertEqual(messages[1].get("mode"), "standard")
             self.assertEqual(messages[2].get("mode"), "self_refine")
-            self.assertIsNone(messages[3].get("mode"))
+            self.assertEqual(messages[3].get("mode"), "self_refine")
 
             raw_txt = (Path(tmpdir) / f"{conv_id}.txt").read_text(encoding="utf-8")
             self.assertIn("USER [mode: standard]:", raw_txt)
+            self.assertIn("ASSISTANT [mode: standard]:", raw_txt)
             self.assertIn("USER [mode: self_refine]:", raw_txt)
-            self.assertIn("ASSISTANT:", raw_txt)
+            self.assertIn("ASSISTANT [mode: self_refine]:", raw_txt)
 
     def test_backward_compatibility_with_older_txt_without_modes(self):
         with tempfile.TemporaryDirectory() as tmpdir:

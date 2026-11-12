@@ -72,9 +72,11 @@ class ChatAppTests(unittest.TestCase):
             self.assertEqual(loaded["messages"][0]["content"], "What is self-refine?")
             self.assertEqual(loaded["messages"][0].get("mode"), "standard")
             self.assertEqual(loaded["messages"][1]["content"], "Mock reply #1")
+            self.assertEqual(loaded["messages"][1].get("mode"), "standard")
             self.assertEqual(loaded["messages"][2]["content"], "Tell me more.")
             self.assertEqual(loaded["messages"][2].get("mode"), "self_refine")
             self.assertEqual(loaded["messages"][3]["content"], "Mock reply #2")
+            self.assertEqual(loaded["messages"][3].get("mode"), "self_refine")
 
             # Second turn must include the first turn in LLM context.
             self.assertIn("User: What is self-refine?", seen_contexts[1])
@@ -115,7 +117,9 @@ class ChatAppTests(unittest.TestCase):
             loaded = manager2.load_conversation("chat_001")
             self.assertEqual(len(loaded["messages"]), 4)
             self.assertEqual(loaded["messages"][0].get("mode"), "standard")
+            self.assertEqual(loaded["messages"][1].get("mode"), "standard")
             self.assertEqual(loaded["messages"][2].get("mode"), "self_refine")
+            self.assertEqual(loaded["messages"][3].get("mode"), "self_refine")
             self.assertEqual(loaded["messages"][3]["content"], "Follow-up answer")
             self.assertIn("Orbital Physics", out.getvalue())
 
