@@ -5,7 +5,14 @@ from prompt_lib.backends import openai_api
 import nltk
 import spacy
 
-nlp = spacy.load("en_core_web_sm")
+_nlp = None
+
+
+def get_nlp():
+    global _nlp
+    if _nlp is None:
+        _nlp = spacy.load("en_core_web_sm")
+    return _nlp
 from src.utils import Prompt
 
 
@@ -90,6 +97,7 @@ what concepts from the concept list are missing from the sentence?"""
         present_concepts = []
 
         # Tokenize the sentence and lemmatize the tokens
+        nlp = get_nlp()
         tokens = nltk.word_tokenize(sentence)
         lemmas = [token.lemma_ for token in nlp(sentence)]
 

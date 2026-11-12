@@ -7,7 +7,6 @@ from typing import Any, Dict, List
 import pandas as pd
 import json
 from tqdm import tqdm
-from pandarallel import pandarallel
 import multiprocessing
 import traceback
 import argparse
