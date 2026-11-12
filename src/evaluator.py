@@ -4,9 +4,16 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import time
 from typing import Dict, List, Optional
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 from prompt_lib.experiment import CURRENT
 from src.chat_pipeline import ChatResponsePipeline
@@ -126,12 +133,17 @@ def run_evaluations(
     output_path: str | Path = DEFAULT_OUTPUT_PATH,
     conditions: Optional[List[str]] = None,
     limit_prompts: Optional[int] = None,
+    prompt_ids: Optional[List[str]] = None,
     engine: str = "groq:qwen/qwen3.8-27b",
     resume: bool = True,
+    stop_on_error: bool = False,
 ) -> List[Dict[str, object]]:
     """Run comparative evaluation suite across specified conditions and prompts."""
     prompts_data = json.loads(Path(prompts_path).read_text(encoding="utf-8"))
-    if limit_prompts:
+    if prompt_ids:
+        target_ids = {str(pid) for pid in prompt_ids}
+        prompts_data = [p for p in prompts_data if str(p.get("id")) in target_ids]
+    elif limit_prompts:
         prompts_data = prompts_data[:limit_prompts]
 
     selected_conditions = conditions or ["A", "B", "C", "D"]
@@ -143,6 +155,8 @@ def run_evaluations(
 
     # Load existing valid completed records when resuming
     if resume and output_file.exists():
+        valid_entries: List[Dict[str, object]] = []
+        has_errors = False
         try:
             content = output_file.read_text(encoding="utf-8")
             for line in content.splitlines():
@@ -155,11 +169,21 @@ def run_evaluations(
                     c_key = entry.get("condition_key")
                     if p_id and c_key and entry.get("status") == "success":
                         completed_pairs.add((str(p_id), str(c_key)))
-                    results.append(entry)
+                        valid_entries.append(entry)
+                    else:
+                        has_errors = True
                 except Exception:
-                    pass
+                    has_errors = True
         except Exception:
             pass
+
+        # If previous run left uncompleted/error records, clean them from output_file
+        # so resuming and appending recovered results does not leave duplicate combinations.
+        if has_errors:
+            with output_file.open("w", encoding="utf-8") as out_clean:
+                for v_entry in valid_entries:
+                    out_clean.write(redact(json.dumps(v_entry, ensure_ascii=False)) + "\n")
+        results = list(valid_entries)
 
     if completed_pairs:
         print(f"Resuming evaluation: found {len(completed_pairs)} already completed prompt/condition pairs in {output_path}.")
@@ -195,6 +219,12 @@ def run_evaluations(
                 cond = CONDITIONS[cond_key]
                 pipeline = pipeline_personalized if cond["use_personalization"] else pipeline_unpersonalized
                 record = run_single_evaluation(prompt_item, cond_key, pipeline)
+
+                if stop_on_error and record.get("status") == "error":
+                    print(f"\n[ERROR] Evaluation failed for [{p_id}] Condition [{cond_key}]: {record.get('error')}")
+                    print("Stopping recovery process safely.")
+                    raise SystemExit(1)
+
                 results.append(record)
                 completed_pairs.add((str(p_id), str(cond_key)))
                 safe_json = redact(json.dumps(record, ensure_ascii=False))
@@ -211,8 +241,10 @@ def main() -> None:
     parser.add_argument("--output", default=DEFAULT_OUTPUT_PATH, help="Path to output JSONL")
     parser.add_argument("--conditions", nargs="+", choices=["A", "B", "C", "D"], help="Conditions to run")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of prompts (e.g. 1 for smoke test)")
+    parser.add_argument("--prompt-ids", nargs="+", help="Filter by specific prompt IDs (e.g. --prompt-ids theo_03 theo_04)")
     parser.add_argument("--engine", default="groq:qwen/qwen3.8-27b", help="Model engine identifier")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing output instead of resuming")
+    parser.add_argument("--stop-on-error", action="store_true", help="Stop evaluation immediately if a prompt/condition fails")
     args = parser.parse_args()
 
     results = run_evaluations(
@@ -221,8 +253,10 @@ def main() -> None:
         output_path=args.output,
         conditions=args.conditions,
         limit_prompts=args.limit,
+        prompt_ids=args.prompt_ids,
         engine=args.engine,
         resume=not args.overwrite,
+        stop_on_error=args.stop_on_error,
     )
     print(f"\nEvaluations completed: {len(results)} total execution records in {args.output}")
 

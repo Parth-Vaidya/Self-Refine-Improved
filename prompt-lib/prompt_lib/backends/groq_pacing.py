@@ -9,10 +9,22 @@ from email.utils import parsedate_to_datetime
 from prompt_lib.backends.huggingface_api import InferenceError
 
 
-def wait(seconds):
+DEFAULT_RETRY_DELAY = 5.0
+
+
+def wait(seconds, reason=None, attempt=None, max_retries=None):
     if seconds <= 0:
         return
-    print(f"[Groq] Waiting {seconds:.1f} seconds before the next request...", file=sys.stderr, flush=True)
+    if attempt is not None and max_retries is not None:
+        why = reason or "Rate limit exceeded"
+        print(
+            f"[Groq] {why}. Attempt {attempt}/{max_retries}. "
+            f"Waiting {seconds:.1f} seconds before retrying...",
+            file=sys.stderr,
+            flush=True,
+        )
+    else:
+        print(f"[Groq] Waiting {seconds:.1f} seconds before the next request...", file=sys.stderr, flush=True)
     # Small sleeps keep long provider cooldowns interruptible.
     while seconds > 0:
         chunk = min(seconds, 30)
@@ -45,8 +57,16 @@ def pace():
     wait(max(0, slot - time.time()))
 
 
-def retry_delay(header, status):
-    fallback = 65 if status == 429 else 0
+def retry_delay(header, status, default_delay=None):
+    if default_delay is None:
+        try:
+            default_delay = float(os.getenv("GROQ_DEFAULT_RETRY_DELAY", "5.0"))
+            if not math.isfinite(default_delay) or default_delay < 0:
+                default_delay = DEFAULT_RETRY_DELAY
+        except (ValueError, TypeError):
+            default_delay = DEFAULT_RETRY_DELAY
+
+    fallback = default_delay if status == 429 else 0.0
     if not header:
         return fallback
     try:
@@ -60,4 +80,4 @@ def retry_delay(header, status):
         return fallback
     if delay > 3600:
         raise InferenceError("Groq requested a cooldown longer than one hour; run stopped to avoid further requests.")
-    return max(0, delay)
+    return max(0.0, delay)

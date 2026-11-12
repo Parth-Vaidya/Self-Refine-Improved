@@ -22,6 +22,8 @@ This directory contains the unit, integration, and offline regression tests for 
 | `test_preference_extractor.py` | `src/preference_extractor.py` | Regex/keyword rule matching for style preferences, extraction across chat logs in `chats/`, profile updating without duplicates, and preservation of manual user edits. |
 | `test_evaluator.py` | `src/evaluator.py`, `src/eval_report.py` | Phase 4 evaluation pipeline, authentic telemetry recording via `GroqAPIWrapper.call` mock, resume logic (skipping completed combinations), JSONL serialization, and comparative Markdown report generation. |
 | `test_groq_fallback.py` | `prompt_lib/backends/` | Provider switching from Hugging Face to Groq upon HTTP 402/429, retry delays, rate-limit isolation, and safe termination upon provider exhaustion. |
+| `test_groq_pacing.py` | `prompt_lib/backends/groq_pacing.py` | Rate-limit retry delays, 5-second default delay when no `Retry-After` header exists, respecting server-provided `Retry-After` values, JSON body timing fallbacks, bounding max retries, immediate failure on permanent errors, and clear stderr retry messages. |
+| `test_resume_pipeline.py` | `src/experiment.py`, `prompt_lib/` | Task checkpointing and recovery: verifies that multi-attempt iterative refinement pipelines successfully resume and continue execution after Groq rate limits and cooldowns. |
 | `test_inference.py` | `src/experiment.py`, `prompt_lib/` | Legacy benchmark task routing (acronym, commongen, gsm, pie, readability, responsegen, sentiment_reversal), Gemini/HF adapter calls, and CommonGen spaCy/NLTK concept detection. |
 
 ---
@@ -45,6 +47,8 @@ $env:PYTHONPATH = ".;prompt-lib"
 .venv-research\Scripts\python.exe -m unittest tests.test_conversation_manager -v
 .venv-research\Scripts\python.exe -m unittest tests.test_chat_app -v
 .venv-research\Scripts\python.exe -m unittest tests.test_groq_fallback -v
+.venv-research\Scripts\python.exe -m unittest tests.test_groq_pacing -v
+.venv-research\Scripts\python.exe -m unittest tests.test_resume_pipeline -v
 .venv-research\Scripts\python.exe -m unittest tests.test_inference -v
 ```
 

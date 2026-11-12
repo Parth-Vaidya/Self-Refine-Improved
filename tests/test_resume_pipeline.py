@@ -30,7 +30,12 @@ class ResumePipelineTests(unittest.TestCase):
             self.assertEqual(len(record["calls"]), 6)
             self.assertEqual(post.call_args_list[4], post.call_args_list[5])
             self.assertEqual(reserve.call_count, 7)
-            wait.assert_called_once_with(10)
+            wait.assert_called_once_with(
+                10.0,
+                reason="Rate limit exceeded (HTTP 429)",
+                attempt=1,
+                max_retries=5,
+            )
             saved = json.loads(checkpoint.read_text(encoding="utf-8"))
             self.assertEqual(len(saved["answers"]), 3)
             self.assertEqual(saved["latest_answer"], "Second refinement")
