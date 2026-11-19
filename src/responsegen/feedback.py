@@ -62,8 +62,7 @@ Scores:
 Here are some examples of this scoring rubric:
 
 """
-        self.prompt = instruction + self.inter_example_sep.join(prompt)
-        self.prompt = self.inter_example_sep.join(prompt) + self.inter_example_sep
+        self.prompt = instruction + self.inter_example_sep.join(prompt) + self.inter_example_sep
     
     def __call__(self, context: str, response: str):
         prompt = self.get_prompt_with_question(context=context, response=response)
@@ -93,5 +92,8 @@ Here are some examples of this scoring rubric:
         
 {context}
 
-Response: {response}"""
+Response: {response}
+
+Scores:
+"""
         return question

@@ -16,6 +16,8 @@ def render_record(record, number=1):
     source = record.get("input", {})
     lines += [text(source.get("context", source) if isinstance(source, dict) else source), "", "## Final answer", "",
               text(record.get("final_output") or record.get("error") or "No final answer saved."), ""]
+    if record.get("summary_text"):
+        lines += ["## Execution summary", "", record["summary_text"], ""]
     if record.get("status") == "partial":
         lines += ["## Completion note", "", "The experiment stopped early. The answer above is the latest completed answer; it may lack final feedback.",
                   "", text(record.get("error", "")), ""]

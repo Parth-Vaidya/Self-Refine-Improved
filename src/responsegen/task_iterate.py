@@ -119,7 +119,8 @@ Okay, let's use this feedback to improve the response.
 Conversation history: 
         
 {context}
-"""
+
+Response: """
 
         return input_txt
 

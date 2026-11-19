@@ -4,7 +4,8 @@ from prompt_lib.backends.huggingface_api import InferenceError
 
 def response_text(text):
     parts = re.split(r"(?im)^\s*(?:[-*]\s*)?(?:\*\*)?Response:(?:\*\*)?\s*", text, maxsplit=1)
-    value = parts[-1].split("###", 1)[0].strip()
+    value = parts[-1].split("###", 1)[0]
+    value = re.split(r"(?im)^\s*(?:Scores|Conversation history)\s*:", value, maxsplit=1)[0].strip()
     if not value:
         raise InferenceError("Dialogue model returned an empty response.")
     return value

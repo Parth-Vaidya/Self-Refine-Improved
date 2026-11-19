@@ -138,16 +138,15 @@ if __name__ == "__main__":
                 best_score = details["total_score"]
                 best_candidate = (acronym, details)
 
-        print("\n" + "=" * 60)
-        print("                 REFINEMENT SUMMARY")
-        print("=" * 60)
-        print(f"{'Step':<8} {'Acronym':<15} {'Score':<10} {'Status'}")
-        print("-" * 60)
-        for idx, (acronym, details) in enumerate(all_acronyms_to_scores.items()):
-            is_best = (acronym == best_candidate[0])
-            status = "★ BEST (ACCEPTED)" if is_best else ("Initial Draft" if idx == 0 else "Refined")
-            print(f"{idx:<8} {acronym:<15} {details['total_score']}/25     {status}")
-        print("-" * 60)
+        from src.summary import format_execution_summary
+        loops = max(0, len(all_acronyms_to_scores) - 1)
+        summary_line = format_execution_summary(
+            score=best_candidate[1]["total_score"],
+            max_score=25,
+            loops=loops,
+            applied=False,
+        )
+        print(f"\n{summary_line}")
 
         # Highlight final accepted result
         best_acronym, best_details = best_candidate
