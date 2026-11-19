@@ -85,18 +85,15 @@ def run_cmd():
         print("\nNo output generated.")
         return
 
-    # Print summary progression
-    print("\n" + "=" * 65)
-    print("                     REFINEMENT SUMMARY")
-    print("=" * 65)
-    print(f"{'Step':<8} {'Status':<25} {'Sentence Preview'}")
-    print("-" * 65)
-    for idx, item in enumerate(sent_to_fb):
-        is_clean = (item['concept_feedback'] == ['none'] or item['concept_feedback'] == ['NONE']) and item['commonsense_feedback'].lower() == 'none'
-        status = "★ PASSED (ALL SATISFIED)" if is_clean else ("Needs Refinement" if idx > 0 else "Initial Draft")
-        preview = item['sentence'][:30] + ("..." if len(item['sentence']) > 30 else "")
-        print(f"{idx:<8} {status:<25} \"{preview}\"")
-    print("-" * 65)
+    from src.summary import format_execution_summary
+    loops = max(0, len(sent_to_fb) - 1)
+    summary_line = format_execution_summary(
+        score=None,
+        max_score=None,
+        loops=loops,
+        applied=False,
+    )
+    print(f"\n{summary_line}")
 
     # Final accepted sentence
     final_item = sent_to_fb[-1]

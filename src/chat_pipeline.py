@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 
 from prompt_lib.backends import openai_api
 from prompt_lib.backends.huggingface_api import InferenceError
+from src.summary import get_summary_metadata, resolve_preference_sources
 
 
 DEFAULT_PROFILE_PATH = "user_profile.json"
@@ -110,6 +111,8 @@ class ChatResponsePipeline:
         self.engine = engine
         self.max_attempts = max_attempts
         self.profile_path = profile_path
+        self.last_execution_metadata: Dict[str, Any] = {}
+        self.last_execution_summary: str = ""
 
     def _call_model(self, prompt: str, stage: str, max_tokens: int = 2048, stop_token: Optional[str] = None) -> str:
         output = openai_api.OpenaiAPIWrapper.call(
@@ -160,6 +163,17 @@ class ChatResponsePipeline:
         """Generate response in either 'standard' (single-pass) or 'self_refine' mode with personalization."""
         # Load user personalization instruction once per response generation
         personalization = load_personalization_instruction(self.profile_path)
+        applied_prefs: List[str] = []
+        if personalization:
+            try:
+                p_data = json.loads(Path(self.profile_path).read_text(encoding="utf-8"))
+                for pk, pv in p_data.get("preferences", {}).items():
+                    if isinstance(pv, dict) and pv.get("enabled") is True:
+                        applied_prefs.append(pv.get("description") or pk)
+                    elif pv is True:
+                        applied_prefs.append(pk)
+            except Exception:
+                applied_prefs = []
 
         # 1. Initial generation (applies personalization instruction to both modes)
         initial_response = self.generate_initial(context, personalization=personalization)
@@ -168,23 +182,51 @@ class ChatResponsePipeline:
 
         # If Standard mode was chosen or max_attempts <= 1, do not perform feedback or refinement
         if mode == "standard" or self.max_attempts <= 1:
+            sources, cleaned_prefs = resolve_preference_sources(
+                applied_prefs, query_text=context, profile_path=self.profile_path
+            )
+            self.last_execution_metadata = get_summary_metadata(
+                score=None,
+                max_score=10,
+                loops=0,
+                preference_sources=sources,
+                applied_preferences=cleaned_prefs,
+                applied=bool(personalization),
+            )
+            self.last_execution_summary = self.last_execution_metadata["summary_line"]
             return initial_response
 
         # 2. Refinement loop with graceful fallback to best response so far
         current_best = initial_response
+        loops = 0
+        final_score: Optional[int] = None
         for _ in range(self.max_attempts - 1):
             try:
                 feedback, score = self.get_feedback(context, current_best, personalization=personalization)
+                final_score = score
                 # If already highly rated or critique says None, keep current best
                 if "Critique Summary: None" in feedback or score >= 9:
                     break
                 refined = self.refine(context, current_best, feedback, personalization=personalization)
                 if refined and len(refined) > 5:
                     current_best = refined
+                    loops += 1
             except Exception:
                 # If feedback or refinement fails (e.g. rate limit, formatting),
                 # preserve the already-generated initial/current best answer.
                 break
 
+        sources, cleaned_prefs = resolve_preference_sources(
+            applied_prefs, query_text=context, profile_path=self.profile_path
+        )
+        self.last_execution_metadata = get_summary_metadata(
+            score=final_score,
+            max_score=10,
+            loops=loops,
+            preference_sources=sources,
+            applied_preferences=cleaned_prefs,
+            applied=bool(personalization),
+        )
+        self.last_execution_summary = self.last_execution_metadata["summary_line"]
         return current_best
 

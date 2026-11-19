@@ -19,6 +19,7 @@ from src import utils  # Load .env without overriding existing environment varia
 from prompt_lib.experiment import CURRENT
 from prompt_lib.backends.huggingface_api import InferenceError
 from src.output import final_output, redact, show
+from src.summary import get_summary_metadata, resolve_preference_sources
 
 TASKS = {
     "readability": (None, "refine_code"),
@@ -148,6 +149,74 @@ def run_record(task, row, config, attempts=4, temperature=0.0, feedback_type="ri
                 stream.write(redact(json.dumps(content, ensure_ascii=False, indent=2)))
             temporary.replace(path)
     state["save_checkpoint"] = save_checkpoint
+
+    def compute_record_summary(rec, partial=False):
+        if config.get("variant") == "A":
+            loops = 0
+        elif task in ("acronym", "responsegen") and isinstance(rec.get("result"), dict):
+            max_attempt = max((d.get("n_attempts", 0) for d in rec["result"].values() if isinstance(d, dict)), default=0)
+            loops = max(max_attempt, iteration[0])
+        elif task == "commongen" and isinstance(rec.get("result"), list):
+            loops = max(0, len(rec["result"]) - 1)
+        elif task == "readability" and isinstance(rec.get("result"), dict):
+            loops = len(rec["result"].get("updates", []))
+        else:
+            loops = iteration[0]
+
+        score = None
+        max_score = None
+        if config.get("variant") != "A" and rec.get("result"):
+            if task == "responsegen" and isinstance(rec["result"], dict):
+                cand = rec["result"].get(rec.get("final_output"))
+                if cand and isinstance(cand, dict) and cand.get("total_score") is not None:
+                    score = cand["total_score"]
+                    max_score = 30
+                else:
+                    valid_scores = [d.get("total_score") for d in rec["result"].values()
+                                    if isinstance(d, dict) and d.get("total_score") is not None]
+                    if valid_scores:
+                        score = max(valid_scores)
+                        max_score = 30
+            elif task == "acronym" and isinstance(rec["result"], dict):
+                cand = rec["result"].get(rec.get("final_output"))
+                if cand and isinstance(cand, dict) and cand.get("total_score") is not None:
+                    score = cand["total_score"]
+                    max_score = 25
+                else:
+                    valid_scores = [d.get("total_score") for d in rec["result"].values()
+                                    if isinstance(d, dict) and d.get("total_score") is not None]
+                    if valid_scores:
+                        score = max(valid_scores)
+                        max_score = 25
+
+        profile_path = config.get("profile_path") or os.getenv("SR_PERSONALIZATION_PROFILE")
+        is_personalized = bool(config.get("personalization") or (config.get("variant") in ("C", "D") and profile_path))
+        if is_personalized and profile_path and Path(profile_path).is_file():
+            try:
+                prof_data = json.loads(Path(profile_path).read_text(encoding="utf-8"))
+                enabled_prefs = [k for k, v in prof_data.get("preferences", {}).items()
+                                 if (isinstance(v, dict) and v.get("enabled")) or v is True]
+            except Exception:
+                enabled_prefs = []
+            applied = bool(enabled_prefs)
+            query_str = str(row.get("context", row) if isinstance(row, dict) else row)
+            sources, cleaned_prefs = resolve_preference_sources(
+                enabled_prefs, query_text=query_str, profile_path=profile_path
+            )
+        else:
+            applied = False
+            sources = []
+            cleaned_prefs = []
+
+        return get_summary_metadata(
+            score=score,
+            max_score=max_score,
+            loops=loops,
+            preference_sources=sources,
+            applied_preferences=cleaned_prefs,
+            applied=applied,
+        )
+
     marker = CURRENT.set(state)
     started = time.perf_counter()
     record = {"input": json.loads(redact(json.dumps(row))), "status": "error", "result": None, "final_output": None, "quality": None,
@@ -175,6 +244,10 @@ def run_record(task, row, config, attempts=4, temperature=0.0, feedback_type="ri
             if record["quality"] is not None:
                 record["quality_status"] = "existing model-based feedback metric, not independent ground truth"
         show("FINAL OUTPUT", record["final_output"], terminal)
+        summary = compute_record_summary(record)
+        record["execution_summary"] = summary
+        record["summary_text"] = summary["summary_line"]
+        print(summary["summary_line"], file=terminal, flush=True)
     except Exception as exc:
         if os.getenv("SR_DEBUG_TRACEBACK", "").lower() == "true":
             print(redact(traceback.format_exc()), file=sys.stderr, flush=True)
@@ -191,6 +264,10 @@ def run_record(task, row, config, attempts=4, temperature=0.0, feedback_type="ri
             record["quality_status"] = "Partial model feedback; missing scores are unavailable, not zero."
             show("PARTIAL COMPLETION", record["error"] + " Last completed answer preserved.", terminal)
             show("SAVED ANSWER", record["final_output"], terminal)
+            summary = compute_record_summary(record, partial=True)
+            record["execution_summary"] = summary
+            record["summary_text"] = summary["summary_line"]
+            print(summary["summary_line"], file=terminal, flush=True)
         else:
             show("EXPERIMENT FAILED", record["error"], terminal)
     finally:

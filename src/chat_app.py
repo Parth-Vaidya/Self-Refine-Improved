@@ -41,7 +41,9 @@ def default_generate_response(
 ) -> str:
     """Generate response using dedicated interactive chat pipeline in chosen mode."""
     pipeline = ChatResponsePipeline(engine=engine, max_attempts=attempts)
-    return pipeline.generate_chat_response(context, mode=mode)
+    reply = pipeline.generate_chat_response(context, mode=mode)
+    default_generate_response.last_summary = getattr(pipeline, "last_execution_summary", "")
+    return reply
 
 
 class ChatApp:
@@ -140,6 +142,9 @@ class ChatApp:
                 continue
 
             print(f"Assistant: {reply}\n")
+            summary = getattr(self.response_fn, "last_summary", None)
+            if summary:
+                print(f"{summary}\n")
             self.manager.save_message(conv_id, "assistant", reply, mode=mode)
 
     def start_new_chat(self) -> bool:
